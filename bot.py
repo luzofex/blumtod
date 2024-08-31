@@ -422,6 +422,12 @@ class BlumTod:
         self.log(f"{hijau}Total balance for all accounts: {putih}{total_balance}")
         return total_balance
 
+    def get_next_restart_time(self):
+        """Menghitung waktu restart berikutnya berdasarkan first_account_time dan interval restart."""
+        remaining_delay = calculate_remaining_delay(self.first_account_time, 8, 10)
+        if remaining_delay > 0:
+            return (datetime.now(WIB) + timedelta(seconds=remaining_delay)).strftime("%Y-%m-%d %H:%M:%S %Z%z")
+        return None
 
     def load_config(self):
         config = json.loads(open("config.json", "r", encoding="utf-8").read())

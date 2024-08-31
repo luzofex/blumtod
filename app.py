@@ -57,7 +57,15 @@ app.bot_instance = None
 def index():
     logger.info("Accessing the index page.")
     trim_log_file()  # Trim the log file every time the index page is accessed
-    return render_template('index.html')
+
+    next_restart_time = app.bot_instance.get_next_restart_time() if app.bot_instance else "N/A"
+    
+    return render_template('index.html', next_restart_time=next_restart_time)
+
+@app.route('/next_restart')
+def next_restart():
+    next_restart_time = app.bot_instance.get_next_restart_time() if app.bot_instance else "N/A"
+    return jsonify({'next_restart_time': next_restart_time})
 
 @app.route('/start_bot', methods=['POST'])
 def start_bot():
