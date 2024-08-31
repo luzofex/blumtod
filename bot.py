@@ -10,10 +10,22 @@ from datetime import datetime, timedelta
 from colorama import *
 from urllib.parse import unquote, parse_qs
 from base64 import b64decode
-import pytz  # Tambahkan import untuk timezone
+import pytz
 
 init(autoreset=True)
 
+# Daftar file yang diperlukan
+required_files = ['user-agent.txt', 'data.txt', 'proxies.txt']
+
+# Cek dan buat file jika belum ada
+for file_path in required_files:
+    if not os.path.exists(file_path):
+        with open(file_path, 'w') as file:
+            pass  # Buat file kosong
+        print(f"{file_path} created.")
+    else:
+        print(f"{file_path} already exists.")
+        
 # Definisikan timezone untuk Waktu Indonesia Barat (WIB)
 WIB = pytz.timezone('Asia/Jakarta')
 
@@ -25,13 +37,16 @@ biru = Fore.LIGHTBLUE_EX
 reset = Style.RESET_ALL
 hitam = Fore.LIGHTBLACK_EX
 
+# Fungsi untuk membaca file dan mengabaikan baris kosong
+def load_file_lines(file_path):
+    """Membaca baris dari file dan mengabaikan baris kosong."""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        return [line.strip() for line in f.readlines() if line.strip()]
+
 # Mengimpor User-Agent dari file
 def load_user_agents(file_path='user-agent.txt'):
     with open(file_path, 'r', encoding='utf-8') as f:
-        return [line.strip() for line in f.readlines()]
-
-# Mengimpor daftar User-Agent
-user_agents = load_user_agents()
+        return [line.strip() for line in f.readlines() if line.strip()]
 
 # Menyimpan User-Agent yang dipilih untuk setiap akun
 account_user_agents = {}
@@ -98,10 +113,19 @@ class BlumTod:
                     self.first_account_time = datetime.fromisoformat(first_account_time_str).astimezone(WIB)
 
     def get_user_agent_for_account(self, account_number):
+        # Memuat ulang user-agent setiap kali diperlukan
+        global user_agents
+        user_agents = load_user_agents()
+        
         # Mengembalikan User-Agent yang sama untuk setiap akun
+        if not user_agents:
+            self.log(f"{merah}Error: User-agent list is empty.")
+            return None
+        
         if account_number not in account_user_agents:
             account_user_agents[account_number] = user_agents[account_number % len(user_agents)]
         return account_user_agents[account_number]
+
 
     def renew_access_token(self, tg_data):
         headers = self.base_headers.copy()
@@ -537,8 +561,8 @@ class BlumTod:
             self.log(f"{merah}{args.data} not found, please input valid file name !")
             sys.exit()
 
-        datas = [i for i in open(args.data, "r", encoding='utf-8').read().splitlines() if len(i) > 0]
-        proxies = [i for i in open(args.proxy, encoding='utf-8').read().splitlines() if len(i) > 0]
+        datas = [i for i in open(args.data, "r", encoding='utf-8').read().splitlines() if i.strip()]
+        proxies = [i for i in open(args.proxy, encoding='utf-8').read().splitlines() if i.strip()]
         use_proxy = True if len(proxies) > 0 else False
         self.log(f"{hijau}total account : {putih}{len(datas)}")
         self.log(f"{biru}use proxy : {putih}{use_proxy}")
@@ -580,6 +604,10 @@ class BlumTod:
 
                         # Pilih User-Agent yang tetap untuk akun ini
                         session_user_agent = self.get_user_agent_for_account(index)
+                        if session_user_agent is None:
+                            self.log(f"{merah}Skipping account {index + 1} due to empty user-agent list.")
+                            continue
+
                         self.base_headers["user-agent"] = session_user_agent
                         self.log(f"{kuning}Using User-Agent: {session_user_agent}")
 

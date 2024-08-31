@@ -8,6 +8,16 @@ import json
 
 from bot import BlumTod
 
+# Check and create necessary files if they don't exist
+required_files = ['proxies.txt', 'data.txt', 'user-agent.txt', 'http.log']
+for file_name in required_files:
+    if not os.path.exists(file_name):
+        with open(file_name, 'w') as file:
+            pass  # Just create an empty file
+        print(f"{file_name} created.")
+    else:
+        print(f"{file_name} already exists.")
+
 # Setup logging
 logger = logging.getLogger('werkzeug')  # Mengambil logger Flask default
 logger.setLevel(logging.INFO)  # Set level untuk logger Flask
@@ -116,12 +126,6 @@ def edit_files():
     trim_log_file()  # Trim the log file every time the edit files page is accessed
     return render_template('edit_files.html')
 
-@app.route('/edit_config')
-def edit_config():
-    logger.info("Accessing the edit config page.")
-    trim_log_file()  # Trim the log file every time the edit config page is accessed
-    return render_template('edit_config.html')
-
 @app.route('/edit_file', methods=['GET', 'POST'])
 def edit_file():
     if request.method == 'POST':
@@ -132,6 +136,10 @@ def edit_file():
             with open(file_path, 'w') as file:
                 file.write(content)
             logger.info(f"Saved content to {file_name}.")
+            
+            if file_name == 'user-agent.txt' and app.bot_instance:
+                app.bot_instance.load_user_agents()  # Muat ulang user-agent jika file ini diubah
+                
         elif 'delete' in request.form:
             os.remove(file_path)
             logger.info(f"Deleted file {file_name}.")
@@ -161,12 +169,10 @@ def edit_config_file():
         trim_log_file()  # Trim the log file after editing the config
         return jsonify({'status': 'Config updated successfully'})
     else:
-        with open(config_file_path, 'r') as config_file:
-            config = json.load(config_file)
-        logger.info("Read config.json.")
+        logger.info("Accessing the edit config page.")
         trim_log_file()  # Trim the log file after accessing the config
-        return jsonify(config)
-    
+        return render_template('edit_config.html')
+
 @app.route('/total_balance')
 def total_balance():
     if app.bot_instance is not None:
@@ -176,7 +182,6 @@ def total_balance():
     else:
         logger.warning("Attempted to get total balance, but bot instance is not initialized.")
         return jsonify({'total_balance': 0})
-
 
 def run_bot(bot_instance):
     logger.info("Running the bot instance.")
