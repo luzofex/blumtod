@@ -3,3 +3,5 @@ requests[socks]
 colorama
 typing_extensions
 tls_client
+pytz
+flask
