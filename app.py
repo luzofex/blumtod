@@ -36,6 +36,7 @@ def stop_bot():
     else:
         return jsonify({'status': 'Bot is not running'})
 
+
 @app.route('/status')
 def status():
     # Kembalikan status bot, apakah sedang berjalan atau tidak
@@ -61,10 +62,14 @@ def run_bot(bot_instance):
     bot_instance.main()
 
 if __name__ == '__main__':
+    host = '0.0.0.0'
+    port = 5000
+    print(f"Server running on http://{host}:{port}/")
+    app.run(debug=True, host=host, port=port)
     # Tentukan command untuk membersihkan layar sesuai dengan OS
     if platform.system() == "Windows":
         os.system('cls')
     else:
         os.system('clear')
 
-    app.run(debug=True, host='0.0.0.0', port=5000)
+

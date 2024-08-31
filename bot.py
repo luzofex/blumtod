@@ -54,7 +54,13 @@ def calculate_remaining_delay(start_time, min_hours=8, max_hours=10):
         return random.uniform(0, (max_time - now).total_seconds())
 
 class BlumTod:
+    def stop(self):
+        self.running = False  # Metode untuk menghentikan bot
+        self.log(f"Stopping the bot...")  # Menulis pesan "Stopping the bot..." ke log
+        self.log(f"Bot stopped")  # Menulis pesan "Bot stopped" ke log
+
     def __init__(self):
+        self.running = True  # Tambahkan flag running untuk mengontrol loop
         self.base_headers = {
             "accept": "application/json, text/plain, */*",
             "content-type": "application/json",
@@ -113,15 +119,21 @@ class BlumTod:
         return access_token
 
     def solve_task(self, access_token):
+        if not self.running:
+            return
         url_task = "https://game-domain.blum.codes/api/v1/tasks"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
         res = self.http(url_task, headers)
         for tasks in res.json():
+            if not self.running:
+                break
             if isinstance(tasks, str):
                 self.log(f'{kuning}failed get task list !')
                 return
             for task in tasks.get("tasks"):
+                if not self.running:
+                    break
                 task_id = task.get("id")
                 task_title = task.get("title")
                 task_status = task.get("status")
@@ -143,7 +155,6 @@ class BlumTod:
                         continue
 
                 self.log(f"{kuning}already complete task {task_title} !")
-                # random_delay(1, 2)  # Tunda di antara tugas
 
     def set_proxy(self, proxy=None):
         self.ses = requests.Session()
@@ -151,6 +162,8 @@ class BlumTod:
             self.ses.proxies.update({"http": proxy, "https": proxy})
 
     def claim_farming(self, access_token):
+        if not self.running:
+            return
         url = "https://game-domain.blum.codes/api/v1/farming/claim"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
@@ -161,6 +174,8 @@ class BlumTod:
         return balance
 
     def get_balance(self, access_token, only_show_balance=False):
+        if not self.running:
+            return
         url = "https://game-domain.blum.codes/api/v1/user/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
@@ -184,6 +199,8 @@ class BlumTod:
         return False, end_farming, balance
 
     def start_farming(self, access_token):
+        if not self.running:
+            return
         url = "https://game-domain.blum.codes/api/v1/farming/start"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
@@ -196,6 +213,8 @@ class BlumTod:
         return round(end / 1000)
 
     def get_friend(self, access_token):
+        if not self.running:
+            return
         url = "https://gateway.blum.codes/v1/friends/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
@@ -217,6 +236,8 @@ class BlumTod:
         random_delay(1, 3)  # Tunda setelah pengecekan teman
 
     def checkin(self, access_token):
+        if not self.running:
+            return
         url = "https://game-domain.blum.codes/api/v1/daily-reward?offset=-420"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
@@ -235,13 +256,15 @@ class BlumTod:
         return
 
     def playgame(self, access_token):
+        if not self.running:
+            return
         url_play = "https://game-domain.blum.codes/api/v1/game/play"
         url_claim = "https://game-domain.blum.codes/api/v1/game/claim"
         url_balance = "https://game-domain.blum.codes/api/v1/user/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
 
-        while True:
+        while self.running:
             # Dapatkan jumlah tiket yang tersedia
             res = self.http(url_balance, headers)
             play = res.json().get("playPasses", 0)
@@ -256,6 +279,8 @@ class BlumTod:
                 break  # Keluar dari loop jika tidak ada tiket yang tersisa
 
             for _ in range(play):
+                if not self.running:
+                    break
                 if self.is_expired(access_token):
                     return True
 
@@ -370,6 +395,8 @@ class BlumTod:
             sys.exit()
 
     def ipinfo(self):
+        if not self.running:
+            return
         res = self.http("https://ipinfo.io/json", {"content-type": "application/json"})
         if res is False:
             return False
@@ -389,7 +416,7 @@ class BlumTod:
         retry_count = 0
         max_retries = 5  # Batas percobaan ulang sebelum mengganti proxy
 
-        while retry_count < max_retries:
+        while self.running and retry_count < max_retries:
             try:
                 logfile = "http.log"
                 if not os.path.exists(logfile):
@@ -431,6 +458,8 @@ class BlumTod:
 
     def switch_proxy(self):
         """Ganti proxy dengan salah satu dari daftar proxy yang ada."""
+        if not self.running:
+            return
         if self.proxies:
             new_proxy = random.choice(self.proxies)
             self.set_proxy(new_proxy)
@@ -442,7 +471,7 @@ class BlumTod:
 
     def reset_first_account_time_if_needed(self):
         """Reset first_account_time jika sudah lebih dari 10 jam."""
-        if self.first_account_time is None:
+        if not self.running or self.first_account_time is None:
             return
 
         now = datetime.now(WIB)
@@ -451,7 +480,7 @@ class BlumTod:
             self.log(f"{kuning}Resetting first account time because it's been more than 10 hours.")
 
     def countdown(self, t):
-        while t:
+        while self.running and t:
             menit, detik = divmod(t, 60)
             jam, menit = divmod(menit, 60)
             jam = str(jam).zfill(2)
@@ -507,7 +536,7 @@ class BlumTod:
         # Muat status terakhir dan data akun yang sudah diproses
         self.load_state()
 
-        while True:  # Loop tak terbatas
+        while self.running:  # Loop tak terbatas
             # Reset first_account_time jika sudah lebih dari 10 jam
             self.reset_first_account_time_if_needed()
 
@@ -519,8 +548,10 @@ class BlumTod:
             random.shuffle(remaining_accounts)
 
             print(self.garis)
-            while remaining_accounts:
+            while remaining_accounts and self.running:
                 for index, data in remaining_accounts:
+                    if not self.running:
+                        break
                     if self.first_account_time is None:
                         self.first_account_time = datetime.now(WIB)  # Catat waktu mulai akun pertama dalam WIB
 
@@ -542,7 +573,7 @@ class BlumTod:
                         self.ipinfo() if use_proxy else None
                         access_token = self.get_local_token(userid)
                         failed_fetch_token = False
-                        while True:
+                        while self.running:
                             if access_token is False:
                                 access_token = self.renew_access_token(data)
                                 if access_token is False:
@@ -590,7 +621,7 @@ class BlumTod:
                 ]
 
             # Jika semua akun sudah diproses, reset processed_accounts dan mulai lagi
-            if not remaining_accounts:
+            if not remaining_accounts and self.running:
                 self.processed_accounts.clear()
                 self.save_state()  # Simpan status yang telah di-reset
                 self.log(f"{hijau}All accounts processed. Restarting...")
