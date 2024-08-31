@@ -166,6 +166,17 @@ def edit_config_file():
         logger.info("Read config.json.")
         trim_log_file()  # Trim the log file after accessing the config
         return jsonify(config)
+    
+@app.route('/total_balance')
+def total_balance():
+    if app.bot_instance is not None:
+        total_balance = app.bot_instance.sum_all_balances()
+        logger.info(f"Total balance calculated: {total_balance}")
+        return jsonify({'total_balance': total_balance})
+    else:
+        logger.warning("Attempted to get total balance, but bot instance is not initialized.")
+        return jsonify({'total_balance': 0})
+
 
 def run_bot(bot_instance):
     logger.info("Running the bot instance.")
