@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bot Control Interface</title>
+</head>
+<body>
+    <h1>Bot Control Interface</h1>
+    <button onclick="startBot()">Start Bot</button>
+    <button onclick="stopBot()">Stop Bot</button>
+    <div id="status"></div>
+
+    <h2>Bot Log</h2>
+    <pre id="bot-log" style="background-color: #f4f4f4; padding: 10px; border: 1px solid #ccc; height: 300px; overflow-y: scroll;"></pre>
+
+    <script>
+        function startBot() {
+            fetch('/start_bot', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => document.getElementById('status').innerText = data.status);
+        }
+
+        function stopBot() {
+            fetch('/stop_bot', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => document.getElementById('status').innerText = data.status);
+        }
+
+        function getStatus() {
+            fetch('/status')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('status').innerText = data.running ? 'Bot is running' : 'Bot is stopped';
+                });
+        }
+
+        function fetchLog() {
+            fetch('/log')
+                .then(response => response.json())
+                .then(data => {
+                    const logElement = document.getElementById('bot-log');
+                    logElement.innerText = data.log.join('');
+                    logElement.scrollTop = logElement.scrollHeight;  // Scroll otomatis ke bawah
+                });
+        }
+
+        setInterval(getStatus, 5000);  // Perbarui status bot setiap 5 detik
+        setInterval(fetchLog, 3000);   // Perbarui log setiap 3 detik
+    </script>
+</body>
+</html>
