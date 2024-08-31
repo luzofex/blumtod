@@ -326,6 +326,23 @@ class BlumTod:
         with open("bot.log", "a", encoding="utf-8") as log_file:
             log_file.write(f"{log_message}\n")
 
+        # Trim the bot.log file to only keep the last 100 lines
+        self.trim_log_file()
+
+    def trim_log_file(self):
+        """Trim the bot.log file to only keep the last 100 lines."""
+        log_file = "bot.log"
+        try:
+            with open(log_file, 'r', encoding="utf-8", errors='replace') as file:
+                lines = file.readlines()
+
+            if len(lines) > 100:
+                with open(log_file, 'w', encoding="utf-8") as file:
+                    file.writelines(lines[-100:])
+        except Exception as e:
+            print(f"Failed to trim log file: {str(e)}")
+            self.log(f"{merah}Failed to trim log file: {str(e)}")
+
     def get_local_token(self, userid):
         if not os.path.exists("tokens.json"):
             open("tokens.json", "w", encoding="utf-8").write(json.dumps({}))
