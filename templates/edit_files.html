@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Files</title>
+</head>
+<body>
+    <h1>Edit Files</h1>
+    <select id="file-select" onchange="loadFile()">
+        <option value="data.txt">data.txt</option>
+        <option value="user-agent.txt">user-agent.txt</option>
+        <option value="proxies.txt">proxies.txt</option>
+    </select>
+    <textarea id="file-content" rows="10" cols="50"></textarea><br>
+    <button onclick="saveFile()">Save File</button>
+    <button onclick="deleteFile()">Delete File</button>
+    <a href="/">Back to Home</a>
+
+    <script>
+        function loadFile() {
+            const fileName = document.getElementById('file-select').value;
+            fetch(`/edit_file?file_name=${fileName}`)
+                .then(response => response.json())
+                .then(data => document.getElementById('file-content').value = data.content);
+        }
+
+        function saveFile() {
+            const fileName = document.getElementById('file-select').value;
+            const content = document.getElementById('file-content').value;
+            const formData = new FormData();
+            formData.append('file_name', fileName);
+            formData.append('content', content);
+            formData.append('save', true);
+
+            fetch('/edit_file', {
+                method: 'POST',
+                body: formData
+            }).then(response => response.json())
+              .then(data => alert(data.status));
+        }
+
+        function deleteFile() {
+            const fileName = document.getElementById('file-select').value;
+            const formData = new FormData();
+            formData.append('file_name', fileName);
+            formData.append('delete', true);
+
+            fetch('/edit_file', {
+                method: 'POST',
+                body: formData
+            }).then(response => response.json())
+              .then(data => {
+                  alert(data.status);
+                  document.getElementById('file-content').value = '';
+              });
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            loadFile();  // Load file pertama kali saat halaman dimuat
+        });
+    </script>
+</body>
+</html>

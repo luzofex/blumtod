@@ -14,6 +14,13 @@
     <h2>Bot Log</h2>
     <pre id="bot-log" style="background-color: #f4f4f4; padding: 10px; border: 1px solid #ccc; height: 300px; overflow-y: scroll;"></pre>
 
+    <h2>HTTP Log</h2>
+    <pre id="http-log" style="background-color: #f4f4f4; padding: 10px; border: 1px solid #ccc; height: 300px; overflow-y: scroll;"></pre>
+
+    <h2>Edit Files and Configurations</h2>
+    <a href="/edit_files">Go to File Editor</a>
+    <a href="/edit_config">Go to Config Editor</a>
+
     <script>
         function startBot() {
             fetch('/start_bot', { method: 'POST' })
@@ -35,18 +42,25 @@
                 });
         }
 
-        function fetchLog() {
-            fetch('/log')
+        function fetchLogs() {
+            fetch('/logs')
                 .then(response => response.json())
                 .then(data => {
-                    const logElement = document.getElementById('bot-log');
-                    logElement.innerText = data.log.join('');
-                    logElement.scrollTop = logElement.scrollHeight;  // Scroll otomatis ke bawah
-                });
+                    console.log(data);  // Debugging
+                    const botLogElement = document.getElementById('bot-log');
+                    const httpLogElement = document.getElementById('http-log');
+                    
+                    botLogElement.innerText = data.bot_log.join('');
+                    botLogElement.scrollTop = botLogElement.scrollHeight;  // Scroll otomatis ke bawah
+
+                    httpLogElement.innerText = data.http_log.join('');
+                    httpLogElement.scrollTop = httpLogElement.scrollHeight;  // Scroll otomatis ke bawah
+                })
+                .catch(error => console.error('Error fetching logs:', error));  // Debugging
         }
 
         setInterval(getStatus, 5000);  // Perbarui status bot setiap 5 detik
-        setInterval(fetchLog, 3000);   // Perbarui log setiap 3 detik
+        setInterval(fetchLogs, 3000);  // Perbarui semua log setiap 3 detik
     </script>
 </body>
 </html>

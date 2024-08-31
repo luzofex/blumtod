@@ -27,7 +27,7 @@ hitam = Fore.LIGHTBLACK_EX
 
 # Mengimpor User-Agent dari file
 def load_user_agents(file_path='user-agent.txt'):
-    with open(file_path, 'r') as f:
+    with open(file_path, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f.readlines()]
 
 # Mengimpor daftar User-Agent
@@ -80,7 +80,7 @@ class BlumTod:
 
     def save_state(self):
         """Menyimpan status akun yang sudah diproses ke file"""
-        with open(self.state_file, 'w') as f:
+        with open(self.state_file, 'w', encoding='utf-8') as f:
             state = {
                 "processed_accounts": list(self.processed_accounts),
                 "first_account_time": self.first_account_time.isoformat() if self.first_account_time else None
@@ -90,7 +90,7 @@ class BlumTod:
     def load_state(self):
         """Memuat status akun yang sudah diproses dari file"""
         if os.path.exists(self.state_file):
-            with open(self.state_file, 'r') as f:
+            with open(self.state_file, 'r', encoding='utf-8') as f:
                 state = json.load(f)
                 self.processed_accounts = set(state.get("processed_accounts", []))
                 first_account_time_str = state.get("first_account_time", None)
@@ -322,24 +322,23 @@ class BlumTod:
         # Cetak ke terminal
         print(f"{hitam}[{now}]{reset} {message}")
         
-        # Simpan log ke file bot.log
-        with open("bot.log", "a") as log_file:
+        # Simpan log ke file bot.log dengan encoding utf-8
+        with open("bot.log", "a", encoding="utf-8") as log_file:
             log_file.write(f"{log_message}\n")
-
 
     def get_local_token(self, userid):
         if not os.path.exists("tokens.json"):
-            open("tokens.json", "w").write(json.dumps({}))
-        tokens = json.loads(open("tokens.json", "r").read())
+            open("tokens.json", "w", encoding="utf-8").write(json.dumps({}))
+        tokens = json.loads(open("tokens.json", "r", encoding="utf-8").read())
         if str(userid) not in tokens.keys():
             return False
 
         return tokens[str(userid)]
 
     def save_local_token(self, userid, token):
-        tokens = json.loads(open("tokens.json", "r").read())
+        tokens = json.loads(open("tokens.json", "r", encoding="utf-8").read())
         tokens[str(userid)] = token
-        open("tokens.json", "w").write(json.dumps(tokens, indent=4))
+        open("tokens.json", "w", encoding="utf-8").write(json.dumps(tokens, indent=4))
 
     def is_expired(self, token):
         header, payload, sign = token.split(".")
@@ -355,28 +354,28 @@ class BlumTod:
     def save_failed_token(self, userid, data):
         file = "auth_failed.json"
         if not os.path.exists(file):
-            open(file, "w").write(json.dumps({}))
+            open(file, "w", encoding="utf-8").write(json.dumps({}))
 
-        acc = json.loads(open(file, "r").read())
+        acc = json.loads(open(file, "r", encoding="utf-8").read())
         if str(userid) in acc.keys():
             return
 
         acc[str(userid)] = data
-        open(file, "w").write(json.dumps(acc, indent=4))
+        open(file, "w", encoding="utf-8").write(json.dumps(acc, indent=4))
 
     def save_account_balance(self, userid, balance):
         if not os.path.exists("balances.json"):
-            open("balances.json", "w").write(json.dumps({}))
-        balances = json.loads(open("balances.json", "r").read())
+            open("balances.json", "w", encoding="utf-8").write(json.dumps({}))
+        balances = json.loads(open("balances.json", "r", encoding="utf-8").read())
         balances[str(userid)] = balance
-        open("balances.json", "w").write(json.dumps(balances, indent=4))
+        open("balances.json", "w", encoding="utf-8").write(json.dumps(balances, indent=4))
 
     def sum_all_balances(self):
         """Menjumlahkan semua balance yang ada di balances.json."""
         if not os.path.exists("balances.json"):
             return 0
 
-        balances = json.loads(open("balances.json", "r").read())
+        balances = json.loads(open("balances.json", "r", encoding="utf-8").read())
         # Konversi semua nilai balance ke float sebelum dijumlahkan
         total_balance = sum(float(balance) for balance in balances.values())
         self.log(f"{hijau}Total balance for all accounts: {putih}{total_balance}")
@@ -384,7 +383,7 @@ class BlumTod:
 
 
     def load_config(self):
-        config = json.loads(open("config.json", "r").read())
+        config = json.loads(open("config.json", "r", encoding="utf-8").read())
         self.AUTOTASK = config["auto_complete_task"]
         self.AUTOGAME = config["auto_play_game"]
         self.DEFAULT_INTERVAL = config["interval"]
@@ -420,10 +419,10 @@ class BlumTod:
             try:
                 logfile = "http.log"
                 if not os.path.exists(logfile):
-                    open(logfile, "a")
+                    open(logfile, "a", encoding="utf-8").close()
                 logsize = os.path.getsize(logfile)
                 if logsize > (1024 * 2) > 1:
-                    open(logfile, "w").write("")
+                    open(logfile, "w", encoding="utf-8").write("")
 
                 if data is None:
                     res = self.ses.get(url, headers=headers, timeout=30)
@@ -521,8 +520,8 @@ class BlumTod:
             self.log(f"{merah}{args.data} not found, please input valid file name !")
             sys.exit()
 
-        datas = [i for i in open(args.data, "r").read().splitlines() if len(i) > 0]
-        proxies = [i for i in open(args.proxy).read().splitlines() if len(i) > 0]
+        datas = [i for i in open(args.data, "r", encoding='utf-8').read().splitlines() if len(i) > 0]
+        proxies = [i for i in open(args.proxy, encoding='utf-8').read().splitlines() if len(i) > 0]
         use_proxy = True if len(proxies) > 0 else False
         self.log(f"{hijau}total account : {putih}{len(datas)}")
         self.log(f"{biru}use proxy : {putih}{use_proxy}")

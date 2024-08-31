@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Config</title>
+</head>
+<body>
+    <h1>Edit Config</h1>
+    <form id="config-form">
+        <label for="interval">Interval:</label>
+        <select id="interval" name="interval">
+            <script>
+                // Generate options for interval from 1 to 10
+                for (let i = 1; i <= 10; i++) {
+                    document.write(`<option value="${i}">${i}</option>`);
+                }
+            </script>
+        </select><br><br>
+
+        <label for="auto_complete_task">Auto Complete Task:</label>
+        <select id="auto_complete_task" name="auto_complete_task">
+            <option value="true">True</option>
+            <option value="false">False</option>
+        </select><br><br>
+
+        <label for="auto_play_game">Auto Play Game:</label>
+        <select id="auto_play_game" name="auto_play_game">
+            <option value="true">True</option>
+            <option value="false">False</option>
+        </select><br><br>
+
+        <label for="game_point_low">Game Point Low:</label>
+        <input type="number" id="game_point_low" name="game_point_low" value="240"><br><br>
+
+        <label for="game_point_high">Game Point High:</label>
+        <input type="number" id="game_point_high" name="game_point_high" value="250"><br><br>
+
+        <label for="min_win">Min Win:</label>
+        <input type="number" id="min_win" name="min_win" value="50"><br><br>
+
+        <label for="max_win">Max Win:</label>
+        <input type="number" id="max_win" name="max_win" value="100"><br><br>
+
+        <button type="button" onclick="saveConfig()">Save Config</button>
+        <a href="/">Back to Home</a>
+    </form>
+
+    <script>
+        function loadConfig() {
+            fetch('/edit_config')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('interval').value = data.interval;
+                    document.getElementById('auto_complete_task').value = data.auto_complete_task;
+                    document.getElementById('auto_play_game').value = data.auto_play_game;
+                    document.getElementById('game_point_low').value = data.game_point?.low || 240;
+                    document.getElementById('game_point_high').value = data.game_point?.high || 250;
+                    document.getElementById('min_win').value = data.min_win || 50;
+                    document.getElementById('max_win').value = data.max_win || 100;
+                });
+        }
+
+        function saveConfig() {
+            const minWin = parseInt(document.getElementById('min_win').value);
+            const maxWin = parseInt(document.getElementById('max_win').value);
+
+            if (minWin > maxWin) {
+                alert("Min Win cannot be greater than Max Win");
+                return;
+            }
+
+            const configData = {
+                interval: parseInt(document.getElementById('interval').value),
+                auto_complete_task: document.getElementById('auto_complete_task').value === 'true',
+                auto_play_game: document.getElementById('auto_play_game').value === 'true',
+                game_point: {
+                    low: parseInt(document.getElementById('game_point_low').value),
+                    high: parseInt(document.getElementById('game_point_high').value)
+                },
+                min_win: minWin,
+                max_win: maxWin
+            };
+
+            fetch('/edit_config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(configData)
+            }).then(response => response.json())
+              .then(data => alert(data.status));
+        }
+
+        document.addEventListener("DOMContentLoaded", function() {
+            loadConfig();  // Load konfigurasi pertama kali saat halaman dimuat
+        });
+    </script>
+</body>
+</html>
