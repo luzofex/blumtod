@@ -4,47 +4,87 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bot Control Interface</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        #total-balance {
-            position: fixed;
-            top: 10px;
-            right: 10px;
-            background-color: #f4f4f4;
-            padding: 10px;
-            border: 1px solid #ccc;
-            font-weight: bold;
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
         }
-        
-        #next-restart {
-            position: fixed;
-            top: 10px;
-            right: 250px; /* Adjust the position to be left of total-balance */
-            background-color: #f4f4f4;
-            padding: 10px;
-            border: 1px solid #ccc;
-            font-weight: bold;
+        .navbar-dark .navbar-nav .nav-link {
+            color: #e0e0e0;
+        }
+        .navbar-dark .navbar-nav .nav-link:hover {
+            color: #ffffff;
+        }
+        .bg-dark-custom {
+            background-color: #333333 !important;
+        }
+        .text-light-custom {
+            color: #e0e0e0 !important;
+        }
+        .btn-primary-custom {
+            background-color: #007bff;
+            border-color: #007bff;
+        }
+        .btn-danger-custom {
+            background-color: #dc3545;
+            border-color: #dc3545;
+        }
+        .form-control-dark {
+            background-color: #333333;
+            color: #e0e0e0;
         }
     </style>
 </head>
 <body>
-    <h1>Bot Control Interface</h1>
-    <button onclick="startBot()">Start Bot</button>
-    <button onclick="stopBot()">Stop Bot</button>
-    <div id="status"></div>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark-custom">
+        <div class="container-fluid">
+            <a class="navbar-brand text-light-custom" href="/">Home</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/edit_files">Edit Files</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/edit_config">Edit Config</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
 
-    <div id="total-balance">Total Balance: Loading...</div>
-    <div id="next-restart">Next Restart: Loading...</div>
+    <div class="container mt-5">
+        <h1 class="text-light-custom">Bot Control Interface</h1>
 
-    <h2>Bot Log</h2>
-    <pre id="bot-log" style="background-color: #f4f4f4; padding: 10px; border: 1px solid #ccc; height: 300px; overflow-y: scroll;"></pre>
+        <div class="mb-3">
+            <button class="btn btn-primary-custom" onclick="startBot()">Start Bot</button>
+            <button class="btn btn-danger-custom" onclick="stopBot()">Stop Bot</button>
+        </div>
 
-    <h2>HTTP Log</h2>
-    <pre id="http-log" style="background-color: #f4f4f4; padding: 10px; border: 1px solid #ccc; height: 300px; overflow-y: scroll;"></pre>
+        <div id="status" class="alert alert-info">
+            Status: Loading...
+        </div>
 
-    <h2>Edit Files and Configurations</h2>
-    <a href="/edit_files">Go to File Editor</a>
-    <a href="/edit_config">Go to Config Editor</a>
+        <div id="total-balance" class="alert alert-secondary">
+            Total Balance: Loading...
+        </div>
 
+        <div id="next-restart" class="alert alert-warning">
+            Next Restart: Loading...
+        </div>
+
+        <h2 class="text-light-custom mt-4">Bot Log</h2>
+        <pre id="bot-log" class="form-control form-control-dark" style="height: 300px; overflow-y: scroll;"></pre>
+
+        <h2 class="text-light-custom mt-4">HTTP Log</h2>
+        <pre id="http-log" class="form-control form-control-dark" style="height: 300px; overflow-y: scroll;"></pre>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         function startBot() {
             fetch('/start_bot', { method: 'POST' })
@@ -74,10 +114,10 @@
                     const httpLogElement = document.getElementById('http-log');
                     
                     botLogElement.innerText = data.bot_log.join('');
-                    botLogElement.scrollTop = botLogElement.scrollHeight;  // Scroll otomatis ke bawah
+                    botLogElement.scrollTop = botLogElement.scrollHeight;
 
                     httpLogElement.innerText = data.http_log.join('');
-                    httpLogElement.scrollTop = httpLogElement.scrollHeight;  // Scroll otomatis ke bawah
+                    httpLogElement.scrollTop = httpLogElement.scrollHeight;
                 });
         }
 
@@ -97,11 +137,11 @@
                 });
         }
 
-        setInterval(getStatus, 5000);  // Perbarui status bot setiap 5 detik
-        setInterval(fetchLogs, 3000);  // Perbarui semua log setiap 3 detik
-        setInterval(fetchTotalBalance, 5000);  // Perbarui total balance setiap 5 detik
-        setInterval(fetchNextRestart, 5000);  // Perbarui next restart setiap 5 detik
-        fetchNextRestart();  // Perbarui waktu restart ketika halaman dimuat
+        setInterval(getStatus, 5000);
+        setInterval(fetchLogs, 3000);
+        setInterval(fetchTotalBalance, 5000);
+        setInterval(fetchNextRestart, 5000);
+        fetchNextRestart();
     </script>
 </body>
 </html>

@@ -4,69 +4,188 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Config</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        .navbar-dark .navbar-nav .nav-link {
+            color: #e0e0e0;
+        }
+        .navbar-dark .navbar-nav .nav-link:hover {
+            color: #ffffff;
+        }
+        .bg-dark-custom {
+            background-color: #333333 !important;
+        }
+        .text-light-custom {
+            color: #e0e0e0 !important;
+        }
+        .btn-primary-custom {
+            background-color: #007bff;
+            border-color: #007bff;
+        }
+        .btn-danger-custom {
+            background-color: #dc3545;
+            border-color: #dc3545;
+        }
+        .form-control-dark {
+            background-color: #333333;
+            color: #e0e0e0;
+        }
+        .alert-custom {
+            display: none; /* Notifikasi disembunyikan secara default */
+        }
+    </style>
 </head>
 <body>
-    <h1>Edit Config</h1>
-    <form id="config-form">
-        <label for="interval">Interval:</label>
-        <select id="interval" name="interval">
-            <script>
-                // Generate options for interval from 1 to 10
-                for (let i = 1; i <= 10; i++) {
-                    document.write(`<option value="${i}">${i}</option>`);
-                }
-            </script>
-        </select><br><br>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark-custom">
+        <div class="container-fluid">
+            <a class="navbar-brand text-light-custom" href="/">Home</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/edit_files">Edit Files</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/edit_config">Edit Config</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
 
-        <label for="auto_complete_task">Auto Complete Task:</label>
-        <select id="auto_complete_task" name="auto_complete_task">
-            <option value="true">True</option>
-            <option value="false">False</option>
-        </select><br><br>
+    <div class="container mt-5">
+        <h1 class="text-light-custom">Edit Config</h1>
 
-        <label for="auto_play_game">Auto Play Game:</label>
-        <select id="auto_play_game" name="auto_play_game">
-            <option value="true">True</option>
-            <option value="false">False</option>
-        </select><br><br>
+        <!-- Notifikasi Status -->
+        <div id="status-alert" class="alert alert-custom" role="alert">
+            <!-- Pesan notifikasi akan diisi secara dinamis -->
+        </div>
 
-        <label for="game_point_low">Game Point Low:</label>
-        <input type="number" id="game_point_low" name="game_point_low" value="240"><br><br>
+        <!-- Status Config yang sedang digunakan -->
+        <div id="current-config" class="alert alert-info text-light-custom bg-dark-custom" role="alert">
+            <!-- Informasi konfigurasi saat ini akan ditampilkan di sini -->
+        </div>
 
-        <label for="game_point_high">Game Point High:</label>
-        <input type="number" id="game_point_high" name="game_point_high" value="250"><br><br>
+        <form id="config-form">
+            <div class="mb-3">
+                <label for="interval" class="form-label">Interval:</label>
+                <select id="interval" class="form-select form-control-dark" name="interval">
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                    <option value="3" selected>3</option> <!-- Default value -->
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8</option>
+                    <option value="9">9</option>
+                    <option value="10">10</option>
+                </select>
+            </div>
 
-        <label for="min_win">Min Win:</label>
-        <input type="number" id="min_win" name="min_win" value="50"><br><br>
+            <div class="mb-3">
+                <label for="auto_complete_task" class="form-label">Auto Complete Task:</label>
+                <select id="auto_complete_task" class="form-select form-control-dark" name="auto_complete_task">
+                    <option value="true">True</option>
+                    <option value="false" selected>False</option> <!-- Default value -->
+                </select>
+            </div>
 
-        <label for="max_win">Max Win:</label>
-        <input type="number" id="max_win" name="max_win" value="100"><br><br>
+            <div class="mb-3">
+                <label for="auto_play_game" class="form-label">Auto Play Game:</label>
+                <select id="auto_play_game" class="form-select form-control-dark" name="auto_play_game">
+                    <option value="true" selected>True</option> <!-- Default value -->
+                    <option value="false">False</option>
+                </select>
+            </div>
 
-        <button type="button" onclick="saveConfig()">Save Config</button>
-        <a href="/">Back to Home</a>
-    </form>
+            <div class="mb-3">
+                <label for="game_point_low" class="form-label">Game Point Low:</label>
+                <input type="number" class="form-control form-control-dark" id="game_point_low" name="game_point_low" value="250"> <!-- Default value -->
+            </div>
 
+            <div class="mb-3">
+                <label for="game_point_high" class="form-label">Game Point High:</label>
+                <input type="number" class="form-control form-control-dark" id="game_point_high" name="game_point_high" value="260"> <!-- Default value -->
+            </div>
+
+            <div class="mb-3">
+                <label for="min_win" class="form-label">Min Win:</label>
+                <input type="number" class="form-control form-control-dark" id="min_win" name="min_win" value="250"> <!-- Default value -->
+            </div>
+
+            <div class="mb-3">
+                <label for="max_win" class="form-label">Max Win:</label>
+                <input type="number" class="form-control form-control-dark" id="max_win" name="max_win" value="260"> <!-- Default value -->
+            </div>
+
+            <button type="button" class="btn btn-primary-custom" onclick="saveConfig()">Save Config</button>
+        </form>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        function loadConfig() {
-            fetch('/edit_config')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('interval').value = data.interval;
-                    document.getElementById('auto_complete_task').value = data.auto_complete_task;
-                    document.getElementById('auto_play_game').value = data.auto_play_game;
-                    document.getElementById('game_point_low').value = data.game_point?.low || 240;
-                    document.getElementById('game_point_high').value = data.game_point?.high || 250;
-                    document.getElementById('min_win').value = data.min_win || 50;
-                    document.getElementById('max_win').value = data.max_win || 100;
-                });
+        function showStatusAlert(message, isSuccess) {
+            const alertDiv = document.getElementById('status-alert');
+            alertDiv.classList.remove('alert-success', 'alert-danger', 'alert-custom');
+            alertDiv.classList.add(isSuccess ? 'alert-success' : 'alert-danger');
+            alertDiv.textContent = message;
+            alertDiv.style.display = 'block'; // Tampilkan notifikasi
         }
 
-        function saveConfig() {
+        async function loadConfig() {
+            try {
+                const response = await fetch('/edit_config');
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const data = await response.json();
+                console.log('Config data loaded:', data);  // Logging untuk debugging
+
+                // Set nilai form sesuai dengan data dari config.json
+                document.getElementById('interval').value = data.interval || 3;
+                document.getElementById('auto_complete_task').value = data.auto_complete_task ? 'true' : 'false';
+                document.getElementById('auto_play_game').value = data.auto_play_game ? 'true' : 'false';
+                document.getElementById('game_point_low').value = data.game_point?.low || 250;
+                document.getElementById('game_point_high').value = data.game_point?.high || 260;
+                document.getElementById('min_win').value = data.min_win || 250;
+                document.getElementById('max_win').value = data.max_win || 260;
+
+                // Tampilkan status konfigurasi saat ini
+                displayCurrentConfig(data);
+            } catch (error) {
+                console.error('Error loading config:', error);
+                showStatusAlert('Failed to load config data.', false);
+            }
+        }
+
+        function displayCurrentConfig(config) {
+            const configDiv = document.getElementById('current-config');
+            configDiv.innerHTML = `
+                <strong>Current Config:</strong><br>
+                Interval: ${config.interval || 3}<br>
+                Auto Complete Task: ${config.auto_complete_task ? 'True' : 'False'}<br>
+                Auto Play Game: ${config.auto_play_game ? 'True' : 'False'}<br>
+                Game Point Low: ${config.game_point?.low || 250}<br>
+                Game Point High: ${config.game_point?.high || 260}<br>
+                Min Win: ${config.min_win || 250}<br>
+                Max Win: ${config.max_win || 260}
+            `;
+        }
+
+        async function saveConfig() {
             const minWin = parseInt(document.getElementById('min_win').value);
             const maxWin = parseInt(document.getElementById('max_win').value);
 
             if (minWin > maxWin) {
-                alert("Min Win cannot be greater than Max Win");
+                showStatusAlert("Min Win cannot be greater than Max Win", false);
                 return;
             }
 
@@ -82,18 +201,29 @@
                 max_win: maxWin
             };
 
-            fetch('/edit_config', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(configData)
-            }).then(response => response.json())
-              .then(data => alert(data.status));
+            try {
+                const response = await fetch('/edit_config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(configData)
+                });
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                const data = await response.json();
+                console.log('Config saved:', data);  // Logging untuk debugging
+                showStatusAlert(data.status === 'Config updated successfully' ? 'Config saved successfully!' : 'Failed to save config.', data.status === 'Config updated successfully');
+                loadConfig(); // Setelah penyimpanan, muat ulang konfigurasi untuk memperbarui tampilan status
+            } catch (error) {
+                console.error('Error saving config:', error);
+                showStatusAlert('Failed to save config data.', false);
+            }
         }
 
         document.addEventListener("DOMContentLoaded", function() {
-            loadConfig();  // Load konfigurasi pertama kali saat halaman dimuat
+            loadConfig();
         });
     </script>
 </body>

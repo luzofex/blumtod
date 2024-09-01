@@ -4,20 +4,100 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Edit Files</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            background-color: #121212;
+            color: #e0e0e0;
+        }
+        .navbar-dark .navbar-nav .nav-link {
+            color: #e0e0e0;
+        }
+        .navbar-dark .navbar-nav .nav-link:hover {
+            color: #ffffff;
+        }
+        .bg-dark-custom {
+            background-color: #333333 !important;
+        }
+        .text-light-custom {
+            color: #e0e0e0 !important;
+        }
+        .btn-primary-custom {
+            background-color: #007bff;
+            border-color: #007bff;
+        }
+        .btn-danger-custom {
+            background-color: #dc3545;
+            border-color: #dc3545;
+        }
+        .form-control-dark {
+            background-color: #333333;
+            color: #e0e0e0;
+        }
+        .alert-custom {
+            display: none; /* Notifikasi disembunyikan secara default */
+        }
+    </style>
 </head>
 <body>
-    <h1>Edit Files</h1>
-    <select id="file-select" onchange="loadFile()">
-        <option value="data.txt">data.txt</option>
-        <option value="user-agent.txt">user-agent.txt</option>
-        <option value="proxies.txt">proxies.txt</option>
-    </select>
-    <textarea id="file-content" rows="10" cols="50"></textarea><br>
-    <button onclick="saveFile()">Save File</button>
-    <button onclick="deleteFile()">Delete File</button>
-    <a href="/">Back to Home</a>
+    <!-- Navbar -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark-custom">
+        <div class="container-fluid">
+            <a class="navbar-brand text-light-custom" href="/">Home</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/edit_files">Edit Files</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/edit_config">Edit Config</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
 
+    <div class="container mt-5">
+        <!-- Notifikasi Status -->
+        <div id="status-alert" class="alert alert-custom" role="alert">
+            <!-- Pesan notifikasi akan diisi secara dinamis -->
+        </div>
+
+        <h1 class="text-light-custom">Edit Files</h1>
+
+        <div class="mb-3">
+            <label for="file-select" class="form-label">Select File:</label>
+            <select id="file-select" class="form-select form-control-dark" onchange="loadFile()">
+                <option value="data.txt">data.txt</option>
+                <option value="user-agent.txt">user-agent.txt</option>
+                <option value="proxies.txt">proxies.txt</option>
+            </select>
+        </div>
+
+        <div class="mb-3">
+            <label for="file-content" class="form-label">File Content:</label>
+            <textarea id="file-content" class="form-control form-control-dark" rows="10"></textarea>
+        </div>
+
+        <div>
+            <button class="btn btn-primary-custom" onclick="saveFile()">Save File</button>
+            <button class="btn btn-danger-custom" onclick="deleteFile()">Clear File</button>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function showStatusAlert(message, isSuccess) {
+            const alertDiv = document.getElementById('status-alert');
+            alertDiv.classList.remove('alert-success', 'alert-danger', 'alert-custom');
+            alertDiv.classList.add(isSuccess ? 'alert-success' : 'alert-danger');
+            alertDiv.textContent = message;
+            alertDiv.style.display = 'block'; // Tampilkan notifikasi
+        }
+
         function loadFile() {
             const fileName = document.getElementById('file-select').value;
             fetch(`/edit_file?file_name=${fileName}`)
@@ -37,7 +117,15 @@
                 method: 'POST',
                 body: formData
             }).then(response => response.json())
-              .then(data => alert(data.status));
+              .then(data => {
+                  if (data.status === 'success') {
+                      showStatusAlert('File saved successfully!', true);
+                  } else {
+                      showStatusAlert('Failed to save file.', false);
+                  }
+              }).catch(() => {
+                  showStatusAlert('An error occurred while saving the file.', false);
+              });
         }
 
         function deleteFile() {
@@ -51,13 +139,19 @@
                 body: formData
             }).then(response => response.json())
               .then(data => {
-                  alert(data.status);
-                  document.getElementById('file-content').value = '';
+                  if (data.status === 'cleared') {  // Perbarui status berdasarkan perubahan pada backend
+                      document.getElementById('file-content').value = '';
+                      showStatusAlert('File cleared successfully!', true);
+                  } else {
+                      showStatusAlert('Failed to clear file.', false);
+                  }
+              }).catch(() => {
+                  showStatusAlert('An error occurred while clearing the file.', false);
               });
         }
 
         document.addEventListener("DOMContentLoaded", function() {
-            loadFile();  // Load file pertama kali saat halaman dimuat
+            loadFile();
         });
     </script>
 </body>

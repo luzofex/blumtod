@@ -137,9 +137,15 @@ def edit_files():
 @app.route('/edit_file', methods=['GET', 'POST'])
 def edit_file():
     if request.method == 'POST':
-        file_name = request.form['file_name']
-        content = request.form['content']
+        file_name = request.form.get('file_name')
+        content = request.form.get('content')  # Menggunakan get untuk menghindari KeyError
+        
+        if file_name is None or (content is None and 'save' in request.form):
+            logger.error("File name or content missing in the request.")
+            return jsonify({'status': 'failed', 'message': 'File name or content missing'}), 400
+        
         file_path = os.path.join(os.path.dirname(__file__), file_name)
+        
         if 'save' in request.form:
             with open(file_path, 'w') as file:
                 file.write(content)
@@ -148,11 +154,20 @@ def edit_file():
             if file_name == 'user-agent.txt' and app.bot_instance:
                 app.bot_instance.load_user_agents()  # Muat ulang user-agent jika file ini diubah
                 
+            status_message = 'success'
+            
         elif 'delete' in request.form:
-            os.remove(file_path)
-            logger.info(f"Deleted file {file_name}.")
+            # Mengosongkan isi file tanpa menghapusnya
+            with open(file_path, 'w') as file:
+                file.write('')
+            logger.info(f"Cleared content of {file_name}.")
+            status_message = 'cleared'  # Pastikan status_message diatur ke 'cleared'
+            
+        else:
+            status_message = 'failed'
+            
         trim_log_file()  # Trim the log file after editing a file
-        return jsonify({'status': f'{file_name} updated successfully'})
+        return jsonify({'status': status_message})  # Mengirim status_message yang sesuai
     else:
         file_name = request.args.get('file_name', 'data.txt')
         file_path = os.path.join(os.path.dirname(__file__), file_name)
@@ -166,20 +181,43 @@ def edit_file():
         trim_log_file()  # Trim the log file after accessing a file
         return jsonify({'file_name': file_name, 'content': content})
 
+
 @app.route('/edit_config', methods=['GET', 'POST'])
 def edit_config_file():
     config_file_path = os.path.join(os.path.dirname(__file__), 'config.json')
+    
     if request.method == 'POST':
-        new_config = request.json
-        with open(config_file_path, 'w') as config_file:
-            json.dump(new_config, config_file, indent=4)
-        logger.info("Updated config.json.")
-        trim_log_file()  # Trim the log file after editing the config
-        return jsonify({'status': 'Config updated successfully'})
+        try:
+            new_config = request.json
+            with open(config_file_path, 'w') as config_file:
+                json.dump(new_config, config_file, indent=4)
+            logger.info("Updated config.json.")
+            trim_log_file()  # Trim the log file after editing the config
+            return jsonify({'status': 'Config updated successfully'})
+        except Exception as e:
+            logger.error(f"Error updating config: {str(e)}")
+            return jsonify({'status': 'failed', 'message': str(e)}), 500
+    
     else:
-        logger.info("Accessing the edit config page.")
-        trim_log_file()  # Trim the log file after accessing the config
-        return render_template('edit_config.html')
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            # Jika request dibuat melalui AJAX (JSON request), kembalikan data JSON
+            try:
+                with open(config_file_path, 'r') as config_file:
+                    config_data = json.load(config_file)
+                logger.info("Sending config data as JSON.")
+                return jsonify(config_data)
+            except FileNotFoundError:
+                logger.warning("config.json not found.")
+                return jsonify({"error": "config.json not found."}), 404
+            except Exception as e:
+                logger.error(f"Error loading config: {str(e)}")
+                return jsonify({"error": str(e)}), 500
+        else:
+            # Jika request biasa (non-AJAX), render halaman HTML
+            logger.info("Rendering the edit config HTML page.")
+            trim_log_file()  # Trim the log file every time the edit config page is accessed
+            return render_template('edit_config.html')
+
 
 @app.route('/total_balance')
 def total_balance():
