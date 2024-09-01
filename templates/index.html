@@ -76,7 +76,7 @@
         </div>
 
         <div id="next-restart" class="alert alert-warning">
-            Next Restart: Loading...
+            Next Restart: N/A
         </div>
 
         <h2 class="text-light-custom mt-4">Bot Log</h2>
@@ -165,7 +165,8 @@
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('status').innerText = data.running ? 'Bot is running' : 'Bot is stopped';
-                });
+                })
+                .catch(error => console.error('Error:', error));
         }
 
         function fetchLogs() {
@@ -175,12 +176,21 @@
                     const botLogElement = document.getElementById('bot-log');
                     const httpLogElement = document.getElementById('http-log');
                     
-                    botLogElement.innerText = data.bot_log.join('');
+                    if (Array.isArray(data.bot_log)) {
+                        botLogElement.innerHTML = data.bot_log.join('');
+                    } else {
+                        botLogElement.innerHTML = data.bot_log;
+                    }
                     botLogElement.scrollTop = botLogElement.scrollHeight;
 
-                    httpLogElement.innerText = data.http_log.join('');
+                    if (Array.isArray(data.http_log)) {
+                        httpLogElement.innerHTML = data.http_log.join('');
+                    } else {
+                        httpLogElement.innerHTML = data.http_log;
+                    }
                     httpLogElement.scrollTop = httpLogElement.scrollHeight;
-                });
+                })
+                .catch(error => console.error('Error fetching logs:', error));
         }
 
         function fetchTotalBalance() {
@@ -188,7 +198,8 @@
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('total-balance').innerText = `Total Balance: ${data.total_balance}`;
-                });
+                })
+                .catch(error => console.error('Error fetching total balance:', error));
         }
 
         function fetchNextRestart() {
@@ -196,14 +207,18 @@
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('next-restart').innerText = `Next Restart: ${data.next_restart_time ? data.next_restart_time : 'N/A'}`;
+                })
+                .catch(error => {
+                    document.getElementById('next-restart').innerText = 'Next Restart: N/A';
+                    console.error('Error fetching next restart:', error);
                 });
         }
 
         setInterval(getStatus, 5000);
         setInterval(fetchLogs, 3000);
         setInterval(fetchTotalBalance, 5000);
+        fetchNextRestart();  // Memastikan fungsi ini dipanggil saat halaman pertama kali dimuat
         setInterval(fetchNextRestart, 5000);
-        fetchNextRestart();
     </script>
 </body>
 </html>

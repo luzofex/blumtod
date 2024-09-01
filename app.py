@@ -6,15 +6,18 @@ import os
 import json
 import time
 from urllib.parse import parse_qs, unquote
+import re
+from datetime import datetime, timedelta
 
 from bot import BlumTod
 
 # Setup Flask and logging
 app = Flask(__name__)
 
-# Variabel global untuk menyimpan bot instance dan thread
+# Variabel global untuk menyimpan bot instance, thread, dan waktu restart berikutnya
 bot_thread = None
 bot_instance = None
+next_restart_time = None  # Variabel untuk menyimpan waktu restart berikutnya
 
 logger = logging.getLogger('werkzeug')
 logger.setLevel(logging.INFO)
@@ -45,6 +48,18 @@ def trim_log_file():
 # Function to log messages
 def log_message(message):
     logger.info(message)
+
+# Function to set the next restart time based on remaining delay
+def update_next_restart(bot_instance):
+    global next_restart_time
+    remaining_delay = bot_instance.get_next_restart_time()
+    logger.info(f"Calculated remaining delay: {remaining_delay}")
+    if remaining_delay:
+        next_restart_time = datetime.now() + timedelta(seconds=remaining_delay)
+        logger.info(f"Next restart time set to {next_restart_time.strftime('%Y-%m-%d %H:%M:%S')}")
+    else:
+        next_restart_time = None
+        logger.info("Next restart time is set to None")
 
 # Function to save the state of processing (e.g., token or balance)
 def save_state_callback(userid, data):
@@ -100,17 +115,19 @@ def start_bot():
     global bot_thread, bot_instance
 
     if bot_thread is None or not bot_thread.is_alive():
-        bot_instance = BlumTod()  # Tidak ada argumen yang diberikan
+        bot_instance = BlumTod()  # Inisialisasi instance bot
         bot_thread = threading.Thread(target=run_bot, args=(bot_instance,))
         bot_thread.start()
-        logger.info("Bot started.")
+
+        # Perbarui waktu restart berikutnya berdasarkan remaining delay
+        update_next_restart(bot_instance)
+        logger.info(f"Bot started. Next restart time: {next_restart_time}")
         trim_log_file()
         return jsonify({'status': 'Bot started'})
     else:
         logger.info("Attempted to start bot, but it's already running.")
         trim_log_file()
         return jsonify({'status': 'Bot is already running'})
-
 
 @app.route('/stop_bot', methods=['POST'])
 def stop_bot():
@@ -140,7 +157,7 @@ def status():
 @app.route('/logs')
 def get_logs():
     logs = {}
-    
+
     # Ensure bot.log exists
     bot_log_path = os.path.join(os.path.dirname(__file__), 'bot.log')
     if not os.path.exists(bot_log_path):
@@ -149,7 +166,7 @@ def get_logs():
 
     try:
         with open(bot_log_path, 'r', encoding='utf-8', errors='replace') as f:
-            logs['bot_log'] = f.readlines()
+            logs['bot_log'] = format_logs(f.readlines())
         logger.info(f"Read bot.log: {len(logs['bot_log'])} lines.")
     except FileNotFoundError:
         logs['bot_log'] = ["bot.log file not found."]
@@ -163,7 +180,7 @@ def get_logs():
 
     try:
         with open(http_log_path, 'r', encoding='utf-8', errors='replace') as f:
-            logs['http_log'] = f.readlines()
+            logs['http_log'] = format_logs(f.readlines())
         logger.info(f"Read http.log: {len(logs['http_log'])} lines.")
     except FileNotFoundError:
         logs['http_log'] = ["http.log file not found."]
@@ -171,6 +188,33 @@ def get_logs():
 
     trim_log_file()
     return jsonify(logs)
+
+@app.route('/next_restart')
+def next_restart():
+    if next_restart_time:
+        return jsonify({'next_restart_time': next_restart_time.strftime('%Y-%m-%d %H:%M:%S')})
+    else:
+        return jsonify({'next_restart_time': 'N/A'})
+
+def format_logs(log_lines):
+    """Convert log lines to formatted HTML."""
+    html_logs = []
+    for line in log_lines:
+        # Hapus kode warna ANSI
+        clean_line = re.sub(r'\x1b\[[0-9;]*m', '', line)
+        
+        # Escape HTML dan tambahkan format
+        clean_line = clean_line.strip().replace(" ", "&nbsp;").replace("\n", "<br>")
+        
+        if "ERROR" in clean_line:
+            html_line = f'<div style="color:red;">{clean_line}</div>'
+        elif "WARNING" in clean_line:
+            html_line = f'<div style="color:orange;">{clean_line}</div>'
+        else:
+            html_line = f'<div style="color:green;">{clean_line}</div>'
+        
+        html_logs.append(html_line)
+    return "".join(html_logs)
 
 @app.route('/edit_files')
 def edit_files():
@@ -184,7 +228,7 @@ def edit_file():
         file_name = request.form.get('file_name')
         content = request.form.get('content')
         
-        if file_name is None or (content is None and 'save' in request.form):
+        if file_name is None or content is None and 'save' in request.form:
             logger.error("File name or content missing in the request.")
             return jsonify({'status': 'failed', 'message': 'File name or content missing'}), 400
         
@@ -278,7 +322,6 @@ def total_balance():
         logger.warning("balances.json file not found.")
         return jsonify({'total_balance': 0})
 
-
 @app.route('/reset_bot', methods=['POST'])
 def reset_bot():
     global bot_thread, bot_instance
@@ -332,6 +375,9 @@ def run_bot(bot_instance):
     logger.info("Running the bot instance.")
     bot_instance.load_config()
     bot_instance.main()
+
+    # Perbarui waktu restart setelah bot berjalan
+    update_next_restart(bot_instance)
     trim_log_file()
 
 def get_access_token(userid):
