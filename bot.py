@@ -671,6 +671,7 @@ class BlumTod:
                 ]
 
             # Jika semua akun sudah diproses, reset processed_accounts dan mulai lagi
+# Di dalam method main() di bagian akhir
             if not remaining_accounts and self.running:
                 self.processed_accounts.clear()
                 self.save_state()  # Simpan status yang telah di-reset
@@ -686,16 +687,24 @@ class BlumTod:
                     end_time = datetime.now(WIB) + timedelta(seconds=remaining_delay)
                     formatted_end_time = end_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
                     print(f"{kuning}Waiting until {formatted_end_time} before restarting...", flush=True)
-                    time.sleep(remaining_delay)
+                    self.countdown(int(remaining_delay))
                 
                 self.first_account_time = None  # Reset waktu mulai untuk siklus berikutnya
                 random.shuffle(datas)  # Acak ulang semua akun
 
+                # Restart bot secara otomatis
+                self.main()  # Memulai ulang siklus utama bot
+
+
 
 if __name__ == "__main__":
-    try:
-        app = BlumTod()
-        app.load_config()
-        app.main()
-    except KeyboardInterrupt:
-        sys.exit()
+    while True:  # Tambahkan loop tak terbatas agar bot terus mencoba untuk berjalan
+        try:
+            app = BlumTod()
+            app.load_config()
+            app.main()
+        except KeyboardInterrupt:
+            sys.exit()  # Keluar dengan aman jika ada interupsi manual
+        except Exception as e:
+            print(f"{merah}Unexpected error: {str(e)}. Restarting bot in 10 seconds...")
+            time.sleep(10)  # Beri jeda 10 detik sebelum mencoba untuk restart
