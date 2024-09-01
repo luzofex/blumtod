@@ -49,8 +49,6 @@ def trim_log_file():
 def log_message(message):
     logger.info(message)
 
-import json
-
 # Variabel global untuk menyimpan next_restart_time
 next_restart_time = None
 
@@ -69,28 +67,14 @@ def load_next_restart_time():
         next_restart_time = None
         logger.error(f"Error loading next_restart_time from bot_state.json: {str(e)}")
 
-# Fungsi untuk memperbarui next_restart_time berdasarkan bot_instance
-def update_next_restart(bot_instance):
-    global next_restart_time
-    remaining_delay = bot_instance.get_next_restart_time()
-    logger.info(f"Calculated remaining delay: {remaining_delay}")
-    if remaining_delay:
-        next_restart_time = datetime.now() + timedelta(seconds=remaining_delay)
-        logger.info(f"Next restart time set to {next_restart_time.strftime('%Y-%m-%d %H:%M:%S')}")
-    else:
-        next_restart_time = None
-        logger.info("Next restart time is set to None")
-
-
 @app.route('/next_restart')
 def next_restart():
-    global next_restart_time  # Menggunakan variabel global yang diperbarui oleh update_next_restart
-    load_next_restart_time()  # Pastikan untuk memuat nilai terbaru sebelum merespons
+    global next_restart_time
+    load_next_restart_time()  # Hanya membaca nilai terbaru tanpa memodifikasi
     if next_restart_time:
         return jsonify({'next_restart_time': next_restart_time.strftime('%Y-%m-%d %H:%M:%S')})
     else:
         return jsonify({'next_restart_time': 'N/A'})
-
 
 # Function to save the state of processing (e.g., token or balance)
 def save_state_callback(userid, data):
@@ -150,9 +134,7 @@ def start_bot():
         bot_thread = threading.Thread(target=run_bot, args=(bot_instance,))
         bot_thread.start()
 
-        # Perbarui waktu restart berikutnya berdasarkan remaining delay
-        update_next_restart(bot_instance)
-        logger.info(f"Bot started. Next restart time: {next_restart_time}")
+        logger.info("Bot started.")
         trim_log_file()
         return jsonify({'status': 'Bot started'})
     else:
@@ -219,7 +201,6 @@ def get_logs():
 
     trim_log_file()
     return jsonify(logs)
-
 
 def format_logs(log_lines):
     """Convert log lines to formatted HTML."""
@@ -400,9 +381,6 @@ def run_bot(bot_instance):
     logger.info("Running the bot instance.")
     bot_instance.load_config()
     bot_instance.main()
-
-    # Perbarui waktu restart setelah bot berjalan
-    update_next_restart(bot_instance)
     trim_log_file()
 
 def get_access_token(userid):
