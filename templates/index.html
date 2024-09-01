@@ -60,9 +60,11 @@
     <div class="container mt-5">
         <h1 class="text-light-custom">Bot Control Interface</h1>
 
-        <div class="mb-3">
-            <button class="btn btn-primary-custom" onclick="startBot()">Start Bot</button>
-            <button class="btn btn-danger-custom" onclick="stopBot()">Stop Bot</button>
+        <div class="mb-3 d-flex justify-content-start">
+            <button class="btn btn-primary-custom me-2" onclick="startBot()">Start Bot</button>
+            <button class="btn btn-danger-custom me-2" onclick="stopBot()">Stop Bot</button>
+            <button class="btn btn-warning me-2" data-bs-toggle="modal" data-bs-target="#resetBotModal">Reset Bot</button>
+            <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#refreshBalanceModal">Refresh Balance</button>
         </div>
 
         <div id="status" class="alert alert-info">
@@ -84,6 +86,44 @@
         <pre id="http-log" class="form-control form-control-dark" style="height: 300px; overflow-y: scroll;"></pre>
     </div>
 
+    <!-- Modal untuk Reset Bot -->
+    <div class="modal fade" id="resetBotModal" tabindex="-1" aria-labelledby="resetBotModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="resetBotModalLabel">Konfirmasi Reset Bot</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Apakah Anda yakin ingin mereset bot?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-warning" onclick="resetBot()">Reset Bot</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal untuk Refresh Balance -->
+    <div class="modal fade" id="refreshBalanceModal" tabindex="-1" aria-labelledby="refreshBalanceModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="refreshBalanceModalLabel">Konfirmasi Refresh Balance</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Apakah Anda yakin ingin mereset balance?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-info" onclick="refreshBalance()">Refresh Balance</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         function startBot() {
@@ -96,6 +136,28 @@
             fetch('/stop_bot', { method: 'POST' })
                 .then(response => response.json())
                 .then(data => document.getElementById('status').innerText = data.status);
+        }
+
+        function resetBot() {
+            fetch('/reset_bot', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('status').innerText = data.message;
+                    var resetBotModal = bootstrap.Modal.getInstance(document.getElementById('resetBotModal'));
+                    resetBotModal.hide();
+                })
+                .catch(error => console.error('Error:', error));
+        }
+
+        function refreshBalance() {
+            fetch('/refresh_balance', { method: 'POST' })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('status').innerText = data.message;
+                    var refreshBalanceModal = bootstrap.Modal.getInstance(document.getElementById('refreshBalanceModal'));
+                    refreshBalanceModal.hide();
+                })
+                .catch(error => console.error('Error:', error));
         }
 
         function getStatus() {

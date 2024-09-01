@@ -411,6 +411,70 @@ class BlumTod:
         balances[str(userid)] = balance
         open("balances.json", "w", encoding="utf-8").write(json.dumps(balances, indent=4))
 
+    def process_account(self, account, user_agents, access_token, save_state_callback):
+        try:
+            # Log proses akun dimulai
+            self.log(f"Processing account for user: {account['user']['first_name']}")
+
+            # Menggunakan user-agent khusus untuk akun ini
+            session_user_agent = self.get_user_agent_for_account(account['query_id'])
+            if session_user_agent:
+                self.base_headers["user-agent"] = session_user_agent
+                self.log(f"Using User-Agent: {session_user_agent}")
+            else:
+                self.log(f"Skipping account due to empty user-agent list.")
+                return {"status": "error", "message": "User-Agent list is empty."}
+
+            # Set proxy jika diperlukan
+            if self.use_proxy:
+                proxy = self.proxies[account['query_id'] % len(self.proxies)]
+                self.set_proxy(proxy)
+                self.ipinfo()
+            
+            # Dapatkan token akses
+            if not access_token:
+                access_token = self.renew_access_token(account['user'])
+                if not access_token:
+                    self.save_failed_token(account['user']['id'], account)
+                    return {"status": "error", "message": "Failed to renew access token"}
+
+                self.save_local_token(account['user']['id'], access_token)
+
+            # Cek apakah token sudah kadaluarsa
+            if self.is_expired(access_token):
+                access_token = self.renew_access_token(account['user'])
+                if not access_token:
+                    return {"status": "error", "message": "Access token expired and cannot be renewed"}
+
+            # Proses akun: contoh mengerjakan task dan mengklaim balance
+            self.checkin(access_token)
+            self.get_friend(access_token)
+            if self.AUTOTASK:
+                self.solve_task(access_token)
+
+            # Dapatkan balance, klaim farming jika perlu
+            status, res_bal, balance = self.get_balance(access_token)
+            if status:
+                res_bal = self.claim_farming(access_token)
+                self.start_farming(access_token)
+            if isinstance(res_bal, str):
+                self.start_farming(access_token)
+            if self.AUTOGAME:
+                balance = self.playgame(access_token)
+
+            # Simpan balance setelah semua proses untuk akun selesai
+            self.save_account_balance(account['user']['id'], balance)
+            
+            # Panggil callback untuk menyimpan state
+            save_state_callback(account['user']['id'], {"balance": balance})
+
+            # Kembalikan hasil yang berhasil
+            return {"status": "success", "balance": balance}
+
+        except Exception as e:
+            self.log(f"Error processing account for {account['user']['first_name']}: {str(e)}")
+            return {"status": "error", "message": str(e)}
+        
     def sum_all_balances(self):
         """Menjumlahkan semua balance yang ada di balances.json."""
         if not os.path.exists("balances.json"):
