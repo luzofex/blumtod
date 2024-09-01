@@ -49,7 +49,27 @@ def trim_log_file():
 def log_message(message):
     logger.info(message)
 
-# Function to set the next restart time based on remaining delay
+import json
+
+# Variabel global untuk menyimpan next_restart_time
+next_restart_time = None
+
+# Fungsi untuk memuat next_restart_time dari bot_state.json
+def load_next_restart_time():
+    global next_restart_time
+    try:
+        with open('bot_state.json', 'r', encoding='utf-8') as f:
+            state = json.load(f)
+            next_restart_time_str = state.get('next_restart_time', None)
+            if next_restart_time_str:
+                next_restart_time = datetime.fromisoformat(next_restart_time_str)
+            else:
+                next_restart_time = None
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        next_restart_time = None
+        logger.error(f"Error loading next_restart_time from bot_state.json: {str(e)}")
+
+# Fungsi untuk memperbarui next_restart_time berdasarkan bot_instance
 def update_next_restart(bot_instance):
     global next_restart_time
     remaining_delay = bot_instance.get_next_restart_time()
@@ -60,6 +80,17 @@ def update_next_restart(bot_instance):
     else:
         next_restart_time = None
         logger.info("Next restart time is set to None")
+
+
+@app.route('/next_restart')
+def next_restart():
+    global next_restart_time  # Menggunakan variabel global yang diperbarui oleh update_next_restart
+    load_next_restart_time()  # Pastikan untuk memuat nilai terbaru sebelum merespons
+    if next_restart_time:
+        return jsonify({'next_restart_time': next_restart_time.strftime('%Y-%m-%d %H:%M:%S')})
+    else:
+        return jsonify({'next_restart_time': 'N/A'})
+
 
 # Function to save the state of processing (e.g., token or balance)
 def save_state_callback(userid, data):
@@ -189,12 +220,6 @@ def get_logs():
     trim_log_file()
     return jsonify(logs)
 
-@app.route('/next_restart')
-def next_restart():
-    if next_restart_time:
-        return jsonify({'next_restart_time': next_restart_time.strftime('%Y-%m-%d %H:%M:%S')})
-    else:
-        return jsonify({'next_restart_time': 'N/A'})
 
 def format_logs(log_lines):
     """Convert log lines to formatted HTML."""

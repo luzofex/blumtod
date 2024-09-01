@@ -12,6 +12,7 @@ from urllib.parse import unquote, parse_qs
 from base64 import b64decode
 import pytz
 import re
+import random
 
 
 init(autoreset=True)
@@ -57,19 +58,6 @@ def random_delay(min_delay=2, max_delay=5):
     delay = random.uniform(min_delay, max_delay)
     time.sleep(delay)
 
-def calculate_remaining_delay(start_time, min_hours=8, max_hours=10):
-    """Menghitung jeda yang tersisa hingga mencapai 8-10 jam dari waktu mulai."""
-    min_time = start_time + timedelta(hours=min_hours)
-    max_time = start_time + timedelta(hours=max_hours)
-    now = datetime.now(WIB)
-    
-    if now < min_time:
-        return (min_time - now).total_seconds()
-    elif now > max_time:
-        return 0
-    else:
-        return random.uniform(0, (max_time - now).total_seconds())
-
 class BlumTod:
     def stop(self):
         self.running = False  # Metode untuk menghentikan bot
@@ -94,16 +82,20 @@ class BlumTod:
         self.state_file = "bot_state.json"
         self.processed_accounts = set()  # Set to track processed accounts
         self.first_account_time = None  # Waktu pemrosesan akun pertama
+        self.next_restart_time = None  # Tambahkan inisialisasi untuk next_restart_time
         self.remaining_delay = None  # Tambahkan atribut untuk menyimpan remaining delay
 
     def save_state(self):
         """Menyimpan status akun yang sudah diproses ke file"""
+        state = {
+            "processed_accounts": list(self.processed_accounts),
+            "first_account_time": self.first_account_time.isoformat() if self.first_account_time else None,
+            "next_restart_time": self.next_restart_time.isoformat() if self.next_restart_time else None
+        }
+        
         with open(self.state_file, 'w', encoding='utf-8') as f:
-            state = {
-                "processed_accounts": list(self.processed_accounts),
-                "first_account_time": self.first_account_time.isoformat() if self.first_account_time else None
-            }
             json.dump(state, f)
+
 
     def load_state(self):
         """Memuat status akun yang sudah diproses dari file"""
@@ -111,9 +103,17 @@ class BlumTod:
             with open(self.state_file, 'r', encoding='utf-8') as f:
                 state = json.load(f)
                 self.processed_accounts = set(state.get("processed_accounts", []))
+
                 first_account_time_str = state.get("first_account_time", None)
                 if first_account_time_str:
                     self.first_account_time = datetime.fromisoformat(first_account_time_str).astimezone(WIB)
+
+                next_restart_time_str = state.get("next_restart_time", None)
+                if next_restart_time_str:
+                    self.next_restart_time = datetime.fromisoformat(next_restart_time_str).astimezone(WIB)
+        else:
+            self.save_state()  # Jika file tidak ada, simpan state awal
+
 
     def get_user_agent_for_account(self, account_number):
         # Memuat ulang user-agent setiap kali diperlukan
@@ -496,24 +496,29 @@ class BlumTod:
         if self.first_account_time is None:
             self.remaining_delay = 0
             return self.remaining_delay
-        min_time = self.first_account_time + timedelta(hours=8)
-        max_time = self.first_account_time + timedelta(hours=10)
-        now = datetime.now(WIB)
-
-        if now < min_time:
-            self.remaining_delay = (min_time - now).total_seconds()
-        elif now > max_time:
-            self.remaining_delay = 0
-        else:
-            self.remaining_delay = random.uniform(0, (max_time - now).total_seconds())
+        
+        # Menghasilkan delay acak antara 8 hingga 10 jam dalam detik
+        self.remaining_delay = random.uniform(8 * 3600, 10 * 3600)
         return self.remaining_delay
 
     def get_next_restart_time(self):
         """Menghitung waktu restart berikutnya berdasarkan first_account_time dan interval restart."""
-        self.calculate_remaining_delay()  # Perbarui nilai remaining_delay
-        if self.remaining_delay > 0:
-            return (datetime.now(WIB) + timedelta(seconds=self.remaining_delay)).strftime("%Y-%m-%d %H:%M:%S %Z%z")
-        return None
+        if self.first_account_time is None:
+            return None
+
+        # Hitung delay dan tetapkan next_restart_time
+        self.calculate_remaining_delay()
+        self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)
+        
+        # Format waktu restart untuk output
+        formatted_restart_time = self.next_restart_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+        
+        # Simpan ke bot_state.json
+        self.save_state()  # Simpan state ke bot_state.json
+        
+        return formatted_restart_time
+
+
 
     def load_config(self):
         config = json.loads(open("config.json", "r", encoding="utf-8").read())
@@ -668,6 +673,15 @@ class BlumTod:
         # Muat status terakhir dan data akun yang sudah diproses
         self.load_state()
 
+        if self.first_account_time is None:
+            self.first_account_time = datetime.now(WIB)  # Catat waktu mulai akun pertama dalam WIB
+            self.calculate_remaining_delay()  # Hitung jeda setelah waktu akun pertama diproses
+
+            if self.remaining_delay > 0:
+                self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)
+                self.log(f"Next restart time set to: {self.next_restart_time}")
+                self.save_state()  # Simpan state dengan next_restart_time
+
         while self.running:  # Loop tak terbatas
             # Reset first_account_time jika sudah lebih dari 10 jam
             self.reset_first_account_time_if_needed()
@@ -769,10 +783,11 @@ class BlumTod:
                 self.calculate_remaining_delay()
                 
                 if self.remaining_delay > 0:
-                    end_time = datetime.now(WIB) + timedelta(seconds=self.remaining_delay)
-                    formatted_end_time = end_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+                    formatted_end_time = self.next_restart_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
                     print(f"{kuning}Waiting until {formatted_end_time} before restarting...", flush=True)
-                    self.countdown(int(self.remaining_delay))
+                    remaining_time = (self.next_restart_time - datetime.now(WIB)).total_seconds()
+                    if remaining_time > 0:
+                        self.countdown(int(remaining_time))
                 
                 self.first_account_time = None  # Reset waktu mulai untuk siklus berikutnya
                 random.shuffle(datas)  # Acak ulang semua akun

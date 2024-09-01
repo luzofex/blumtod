@@ -209,7 +209,7 @@
                     document.getElementById('next-restart').innerText = `Next Restart: ${data.next_restart_time ? data.next_restart_time : 'N/A'}`;
                 })
                 .catch(error => {
-                    document.getElementById('next-restart').innerText = 'Next Restart: N/A';
+                    document.getElementById('next-restart').innerText = 'Next Restart: Error fetching data';
                     console.error('Error fetching next restart:', error);
                 });
         }
