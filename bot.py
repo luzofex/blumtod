@@ -415,11 +415,11 @@ class BlumTod:
         """Menjumlahkan semua balance yang ada di balances.json."""
         if not os.path.exists("balances.json"):
             return 0
-
+#
         balances = json.loads(open("balances.json", "r", encoding="utf-8").read())
-        # Konversi semua nilai balance ke float sebelum dijumlahkan
+         #Konversi semua nilai balance ke float sebelum dijumlahkan
         total_balance = sum(float(balance) for balance in balances.values())
-        self.log(f"{hijau}Total balance for all accounts: {putih}{total_balance}")
+        #self.log(f"{hijau}Total balance for all accounts: {putih}{total_balance}")
         return total_balance
 
     def get_next_restart_time(self):
@@ -678,7 +678,7 @@ class BlumTod:
                 self.log(f"{hijau}All accounts processed. Restarting...")
                 
                 # Tampilkan total balance dari semua akun
-                self.sum_all_balances()
+                #self.sum_all_balances()
                 
                 # Hitung jeda yang tersisa hingga mencapai 8-10 jam dari waktu mulai akun pertama
                 remaining_delay = calculate_remaining_delay(self.first_account_time, 8, 10)
