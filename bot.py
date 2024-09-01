@@ -676,6 +676,8 @@ class BlumTod:
         if self.first_account_time is None:
             self.first_account_time = datetime.now(WIB)  # Catat waktu mulai akun pertama dalam WIB
             self.calculate_remaining_delay()  # Hitung jeda setelah waktu akun pertama diproses
+            self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)  # Perbarui next_restart_time
+            self.save_state()  # Simpan state yang diperbarui
 
             if self.remaining_delay > 0:
                 self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)
@@ -775,25 +777,26 @@ class BlumTod:
                 self.processed_accounts.clear()
                 self.save_state()  # Simpan status yang telah di-reset
                 self.log(f"{hijau}All accounts processed. Restarting...")
+
+                # Reset first_account_time dan perbarui next_restart_time untuk siklus baru
+                self.first_account_time = datetime.now(WIB)  # Atur ulang first_account_time untuk siklus baru
+                self.calculate_remaining_delay()  # Hitung ulang delay berdasarkan waktu baru
+                self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)  # Perbarui next_restart_time
+                self.save_state()  # Simpan state yang baru diperbarui
                 
-                # Tampilkan total balance dari semua akun
-                #self.sum_all_balances()
-                
-                # Hitung jeda yang tersisa hingga mencapai 8-10 jam dari waktu mulai akun pertama
-                self.calculate_remaining_delay()
-                
-                if self.remaining_delay > 0:
-                    formatted_end_time = self.next_restart_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
-                    print(f"{kuning}Waiting until {formatted_end_time} before restarting...", flush=True)
-                    remaining_time = (self.next_restart_time - datetime.now(WIB)).total_seconds()
-                    if remaining_time > 0:
-                        self.countdown(int(remaining_time))
-                
-                self.first_account_time = None  # Reset waktu mulai untuk siklus berikutnya
+                formatted_end_time = self.next_restart_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+                print(f"{kuning}Waiting until {formatted_end_time} before restarting...", flush=True)
+                remaining_time = (self.next_restart_time - datetime.now(WIB)).total_seconds()
+                if remaining_time > 0:
+                    self.countdown(int(remaining_time))
+
                 random.shuffle(datas)  # Acak ulang semua akun
 
                 # Restart bot secara otomatis
                 self.main()  # Memulai ulang siklus utama bot
+
+
+                
 
 
 
