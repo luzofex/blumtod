@@ -8,3 +8,5 @@ tokens.json
 proxies.txt
 http.log
 app.log
+cookies
+__pycache__

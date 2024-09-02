@@ -77,7 +77,8 @@
             Game Point Low: {{ config.game_point.low or 250 }}<br>
             Game Point High: {{ config.game_point.high or 260 }}<br>
             Min Win: {{ config.min_win or config.game_point.low or 250 }}<br>
-            Max Win: {{ config.max_win or config.game_point.high or 260 }}
+            Max Win: {{ config.max_win or config.game_point.high or 260 }}<br>
+            Max Attempts: {{ config.max_attempts or 5 }}
         </div>
 
         <form id="config-form">
@@ -131,6 +132,11 @@
             <div class="mb-3">
                 <label for="max_win" class="form-label">Max Win:</label>
                 <input type="number" class="form-control form-control-dark" id="max_win" name="max_win" value="{{ config.max_win or config.game_point.high or 260 }}">
+            </div>
+
+            <div class="mb-3">
+                <label for="max_attempts" class="form-label">Max Attempts:</label>
+                <input type="number" class="form-control form-control-dark" id="max_attempts" name="max_attempts" value="{{ config.max_attempts or 5 }}">
             </div>
 
             <button type="button" class="btn btn-primary-custom" onclick="confirmSaveConfig()">Save Config</button>
@@ -189,7 +195,8 @@
                     high: parseInt(document.getElementById('game_point_high').value)
                 },
                 min_win: minWin,
-                max_win: maxWin
+                max_win: maxWin,
+                max_attempts: parseInt(document.getElementById('max_attempts').value)
             };
 
             try {
@@ -205,7 +212,6 @@
                 }
                 const data = await response.json();
                 showStatusAlert(data.status === 'Config updated successfully' ? 'Config saved successfully!' : 'Failed to save config.', data.status === 'Config updated successfully');
-                loadConfig();
             } catch (error) {
                 showStatusAlert('Failed to save config data.', false);
             } finally {
@@ -213,10 +219,6 @@
                 saveConfigModal.hide();
             }
         }
-
-        document.addEventListener("DOMContentLoaded", function() {
-            loadConfig();
-        });
     </script>
 </body>
 </html>
