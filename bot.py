@@ -12,7 +12,6 @@ from urllib.parse import unquote, parse_qs
 from base64 import b64decode
 import pytz
 import re
-import random
 
 init(autoreset=True)
 
@@ -84,6 +83,9 @@ class BlumTod:
         self.first_account_time = None  # Waktu pemrosesan akun pertama
         self.next_restart_time = None  # Tambahkan inisialisasi untuk next_restart_time
         self.remaining_delay = None  # Tambahkan atribut untuk menyimpan remaining delay
+        self.user_agents = load_user_agents()  # Muat user-agent sekali saat inisialisasi
+        self.use_proxy = False
+        self.proxies = []
 
     def save_state(self):
         """Menyimpan status akun yang sudah diproses ke file"""
@@ -116,17 +118,13 @@ class BlumTod:
 
 
     def get_user_agent_for_account(self, account_number):
-        # Memuat ulang user-agent setiap kali diperlukan
-        global user_agents
-        user_agents = load_user_agents()
-        
         # Mengembalikan User-Agent yang sama untuk setiap akun
-        if not user_agents:
+        if not self.user_agents:
             self.log(f"{merah}Error: User-agent list is empty.")
             return None
         
         if account_number not in account_user_agents:
-            account_user_agents[account_number] = user_agents[account_number % len(user_agents)]
+            account_user_agents[account_number] = self.user_agents[account_number % len(self.user_agents)]
         return account_user_agents[account_number]
 
 
@@ -557,17 +555,6 @@ class BlumTod:
             self.log(f"{merah}Failed to parse user ID from token: {str(e)}")
             return None
 
-    def save_account_balance(self, account_name, balance):
-        """Simpan balance ke balances.json menggunakan nama akun sebagai kunci."""
-        if not os.path.exists("balances.json"):
-            open("balances.json", "w", encoding="utf-8").write(json.dumps({}))
-        
-        balances = json.loads(open("balances.json", "r", encoding="utf-8").read())
-        balances[account_name] = balance or 0
-        
-        with open("balances.json", "w", encoding="utf-8") as f:
-            json.dump(balances, f, indent=4)
-
     def check_and_save_balance(self, access_token, account_name):
         """Mengirim permintaan ke server untuk mengecek balance akun dan menyimpannya."""
         balance = self.get_balance(access_token, only_show_balance=True)
@@ -577,7 +564,7 @@ class BlumTod:
         else:
             self.log(f"{merah}Failed to retrieve balance for {account_name}")
 
-    def process_account(self, account, user_agents, access_token, save_state_callback):
+    def process_account(self, account, access_token, save_state_callback):
         try:
             # Log proses akun dimulai
             account_name = account['user']['first_name']  # Ambil nama akun
@@ -642,8 +629,6 @@ class BlumTod:
             self.log(f"Error processing account for {account_name}: {str(e)}")
             return {"status": "error", "message": str(e)}
 
-
-
         
     def sum_all_balances(self):
         """Menjumlahkan semua balance yang ada di balances.json."""
@@ -681,8 +666,6 @@ class BlumTod:
         
         return formatted_restart_time
 
-
-
     def load_config(self):
         try:
             config = json.loads(open("config.json", "r", encoding="utf-8").read())
@@ -697,7 +680,6 @@ class BlumTod:
         except json.decoder.JSONDecodeError:
             self.log(f"{merah}failed decode config.json")
             sys.exit()
-
 
     def ipinfo(self):
         if not self.running:
@@ -773,7 +755,6 @@ class BlumTod:
         self.log(f"{merah}Max retries reached, moving to the next process.")
         return None  # Mengembalikan None atau nilai khusus lainnya untuk menunjukkan kegagalan
 
-
     def switch_proxy(self):
         """Ganti proxy dengan salah satu dari daftar proxy yang ada."""
         if not self.running:
@@ -793,9 +774,29 @@ class BlumTod:
             return
 
         now = datetime.now(WIB)
+
+        # Jika waktu sekarang lebih besar atau sama dengan waktu restart berikutnya, clear processed accounts
+        if now >= self.next_restart_time:
+            self.log(f"{kuning}Now is greater than or equal to the next restart time. Clearing processed accounts.")
+            self.processed_accounts.clear()
+            self.first_account_time = now
+
+            # Hitung ulang waktu restart berikutnya berdasarkan waktu yang baru diatur
+            self.calculate_remaining_delay()
+            self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)
+            self.save_state()  # Simpan state yang baru diperbarui
+
+        # Jika waktu sekarang lebih dari 10 jam sejak first_account_time, reset first_account_time dan clear processed accounts
         if now > (self.first_account_time + timedelta(hours=10)):
             self.first_account_time = now
+            self.processed_accounts.clear()
             self.log(f"{kuning}Resetting first account time because it's been more than 10 hours.")
+            
+            # Hitung ulang waktu restart berikutnya berdasarkan waktu yang baru diatur
+            self.calculate_remaining_delay()
+            self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)
+            self.save_state()  # Simpan state yang baru diperbarui
+
 
     def countdown(self, t):
         while self.running and t:
@@ -841,15 +842,14 @@ class BlumTod:
 
         datas = [i for i in open(args.data, "r", encoding='utf-8').read().splitlines() if i.strip()]
         proxies = [i for i in open(args.proxy, encoding='utf-8').read().splitlines() if i.strip()]
-        use_proxy = True if len(proxies) > 0 else False
+        self.use_proxy = True if len(proxies) > 0 else False
+        self.proxies = proxies  # Menyimpan daftar proxy yang tersedia
+
         self.log(f"{hijau}total account : {putih}{len(datas)}")
-        self.log(f"{biru}use proxy : {putih}{use_proxy}")
+        self.log(f"{biru}use proxy : {putih}{self.use_proxy}")
         if len(datas) <= 0:
             self.log(f"{merah}add data account in {args.data} first")
             sys.exit()
-
-        self.use_proxy = use_proxy
-        self.proxies = proxies  # Menyimpan daftar proxy yang tersedia
 
         # Muat status terakhir dan data akun yang sudah diproses
         self.load_state()
@@ -859,11 +859,6 @@ class BlumTod:
             self.calculate_remaining_delay()  # Hitung jeda setelah waktu akun pertama diproses
             self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)  # Perbarui next_restart_time
             self.save_state()  # Simpan state yang diperbarui
-
-            if self.remaining_delay > 0:
-                self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)
-                self.log(f"Next restart time set to: {self.next_restart_time}")
-                self.save_state()  # Simpan state dengan next_restart_time
 
         while self.running:  # Loop tak terbatas
             # Reset first_account_time jika sudah lebih dari 10 jam
@@ -900,10 +895,10 @@ class BlumTod:
                         self.base_headers["user-agent"] = session_user_agent
                         self.log(f"{kuning}Using User-Agent: {session_user_agent}")
 
-                        if use_proxy:
+                        if self.use_proxy:
                             proxy = proxies[index % len(proxies)]
-                        self.set_proxy(proxy if use_proxy else None)
-                        self.ipinfo() if use_proxy else None
+                        self.set_proxy(proxy if self.use_proxy else None)
+                        self.ipinfo() if self.use_proxy else None
                         access_token = self.get_local_token(userid)
                         failed_fetch_token = False
                         while self.running:
@@ -958,23 +953,36 @@ class BlumTod:
                 self.log(f"{hijau}All accounts processed. Restarting...")
 
                 # Tunda hingga waktu restart berikutnya
-                formatted_end_time = self.next_restart_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
-                print(f"{kuning}Waiting until {formatted_end_time} before restarting...", flush=True)
+                if self.next_restart_time is not None:
+                    formatted_end_time = self.next_restart_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
+                    print(f"{kuning}Waiting until {formatted_end_time} before restarting...", flush=True)
 
-                remaining_time = (self.next_restart_time - datetime.now(WIB)).total_seconds()
-                if remaining_time > 0:
-                    self.countdown(int(remaining_time))
+                    remaining_time = (self.next_restart_time - datetime.now(WIB)).total_seconds()
+                    if remaining_time > 0:
+                        self.countdown(int(remaining_time))
+
+
+                now = datetime.now(WIB)
+                random_delay(1, 3)
+                if now >= self.next_restart_time:
+                    self.log(f"{kuning}Now is greater than or equal to the next restart time. Clearing processed accounts.")
+                    self.processed_accounts.clear()
 
                 # Setel ulang first_account_time dan next_restart_time
-                self.processed_accounts.clear()
                 self.first_account_time = datetime.now(WIB)  # Inisialisasi ulang dengan waktu saat ini
-                self.next_restart_time = None
 
                 # Perbarui first_account_time dan next_restart_time setelah countdown selesai
-                now = datetime.now(WIB)
+                self.calculate_remaining_delay()
+                self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)
+
+
+                # Jika waktu sekarang lebih besar atau sama dengan waktu restart berikutnya, clear processed accounts
+
                 if now > (self.first_account_time + timedelta(hours=10)):
                     self.first_account_time = now
                     self.log(f"{kuning}Resetting first account time because it's been more than 10 hours.")
+                    random_delay(1, 3)
+                    self.processed_accounts.clear()
 
                 # Hitung ulang waktu restart berikutnya berdasarkan waktu yang baru diatur
                 self.calculate_remaining_delay()
@@ -985,7 +993,8 @@ class BlumTod:
                 random.shuffle(datas)
 
                 # Restart bot secara otomatis
-                self.main()  # Memulai ulang siklus utama bot
+
+                continue  # Mengulangi loop utama
 
 if __name__ == "__main__":
     while True:  # Tambahkan loop tak terbatas agar bot terus mencoba untuk berjalan
