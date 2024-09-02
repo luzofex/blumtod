@@ -401,13 +401,14 @@ class BlumTod:
         attempts = 0
         while attempts < self.MAX_ATTEMPTS:
             res = self.http(session, url, headers)
+            self.countdown(10)
             if res is None:
-                self.countdown(3)
+                self.countdown(10)
                 attempts += 1
                 self.log(f"Percobaan ke-{attempts}")
                 continue
 
-            if res.status_code == 404:
+            if res.status_code == 400:
                 self.log(f"{kuning}already check in today !")
                 return
             elif "ok" in res.text.lower():
