@@ -39,6 +39,7 @@ kuning = Fore.LIGHTYELLOW_EX
 biru = Fore.LIGHTBLUE_EX
 reset = Style.RESET_ALL
 hitam = Fore.LIGHTBLACK_EX
+magenta = Fore.LIGHTMAGENTA_EX
 
 # Fungsi untuk membaca file dan mengabaikan baris kosong
 def load_file_lines(file_path):
@@ -156,7 +157,7 @@ class BlumTod:
             if not self.running:
                 break
             if isinstance(tasks, str):
-                self.log(f'{kuning}failed get task list !')
+                self.log(f"{kuning}failed get task list !")
                 return
             for task in tasks.get("tasks"):
                 if not self.running:
@@ -177,11 +178,11 @@ class BlumTod:
 
                     status = res.json().get("status")
                     if status == "CLAIMED":
-                        self.log(f"{hijau}success complete task {task_title} !")
+                        self.log(f"{hijau}success complete task {task_id} !")
                         random_delay(1, 3)  # Tunda setelah menyelesaikan tugas
                         continue
 
-                self.log(f"{kuning}already complete task {task_title} !")
+                self.log(f"{kuning}already complete task {task_id} !")
 
     def set_proxy(self, proxy=None):
         self.ses = requests.Session()
@@ -195,7 +196,7 @@ class BlumTod:
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
         res = self.http(url, headers, "")
-        balance = res.json()["availableBalance"]
+        balance = res.json().get("availableBalance", 0)
         self.log(f"{hijau}balance after claim : {putih}{balance}")
         random_delay(1, 3)  # Tunda setelah klaim
         return balance
@@ -206,24 +207,42 @@ class BlumTod:
         url = "https://game-domain.blum.codes/api/v1/user/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
-        res = self.http(url, headers)
-        balance = res.json()["availableBalance"]
-        self.log(f"{hijau}balance : {putih}{balance}")
-        if only_show_balance:
-            return balance
-        timestamp = round(res.json()["timestamp"] / 1000)
-        if "farming" not in res.json().keys():
-            return False, "not_started", balance
-        end_farming = round(res.json()["farming"]["endTime"] / 1000)
-        if timestamp > end_farming:
-            self.log(f"{hijau}now is time to claim farming !")
-            return True, end_farming, balance
+        
+        while True:
+            res = self.http(url, headers)
+            balance = res.json().get("availableBalance", 0)
+            self.log(f"{hijau}balance : {putih}{balance}")
+            
+            if only_show_balance:
+                return balance
+            
+            timestamp = res.json().get("timestamp")
+            if timestamp is None:
+                self.countdown(3)  # Tunggu beberapa detik sebelum mencoba lagi
+                continue
+            
+            timestamp = round(timestamp / 1000)
+            
+            if "farming" not in res.json().keys():
+                return False, "not_started", balance
+            
+            end_farming = res.json().get("farming", {}).get("endTime")
+            if end_farming is None:
+                self.countdown(3)  # Tunggu beberapa detik sebelum mencoba lagi
+                continue
+            
+            end_farming = round(end_farming / 1000)
+            
+            if timestamp > end_farming:
+                self.log(f"{hijau}now is time to claim farming !")
+                return True, end_farming, balance
+            
+            self.log(f"{kuning}not time to claim farming !")
+            end_date = datetime.fromtimestamp(end_farming)
+            self.log(f"{hijau}end farming : {putih}{end_date}")
+            random_delay(1, 3)  # Tunda setelah pengecekan balance
+            return False, end_farming, balance
 
-        self.log(f"{kuning}not time to claim farming !")
-        end_date = datetime.fromtimestamp(end_farming)
-        self.log(f"{hijau}end farming : {putih}{end_date}")
-        random_delay(1, 3)  # Tunda setelah pengecekan balance
-        return False, end_farming, balance
 
     def start_farming(self, access_token):
         if not self.running:
@@ -231,13 +250,21 @@ class BlumTod:
         url = "https://game-domain.blum.codes/api/v1/farming/start"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
-        res = self.http(url, headers, "")
-        end = res.json()["endTime"]
+        
+        while True:
+            res = self.http(url, headers, "")
+            end = res.json().get("endTime")
+            if end is None:
+                self.countdown(3)
+                continue
+            break
+
         end_date = datetime.fromtimestamp(end / 1000)
         self.log(f"{hijau}start farming successfully !")
         self.log(f"{hijau}end farming : {putih}{end_date}")
         random_delay(1, 3)  # Tunda setelah memulai farming
         return round(end / 1000)
+
 
     def get_friend(self, access_token):
         if not self.running:
@@ -250,8 +277,8 @@ class BlumTod:
         limit_invite = res.json().get("limitInvitation", 0)
         amount_claim = res.json().get("amountForClaim")
         self.log(f"{putih}limit invitation : {hijau}{limit_invite}")
-        self.log(f"{hijau}claim amount : {putih}{amount_claim}")
-        self.log(f"{putih}can claim : {hijau}{can_claim}")
+        self.log(f"{hijau}referral balance : {putih}{amount_claim}")
+        self.log(f"{putih}can claim referral : {hijau}{can_claim}")
         if can_claim:
             url_claim = "https://gateway.blum.codes/v1/friends/claim"
             res = self.http(url_claim, headers, "")
@@ -318,25 +345,34 @@ class BlumTod:
                 if game_id is None:
                     message = res.json().get("message", "")
                     if message == "cannot start game":
-                        continue
+                        self.log(f"{kuning}{message}, will be tried again in the next round.")
+                       # return False  # Menghentikan proses playgame jika tidak bisa memulai game
                     self.log(f"{kuning}{message}")
                     random_delay(1, 3)  # Tunda jika tidak bisa memulai game
                     continue
 
-                self.countdown(30)
+                while True:
+                    self.countdown(30)
 
-                # Klaim poin setelah bermain
-                point = random.randint(self.MIN_WIN, self.MAX_WIN)
-                data = json.dumps({"gameId": game_id, "points": point})
-                res = self.http(url_claim, headers, data)
+                    # Klaim poin setelah bermain
+                    point = random.randint(self.MIN_WIN, self.MAX_WIN)
+                    data = json.dumps({"gameId": game_id, "points": point})
+                    res = self.http(url_claim, headers, data)
 
-                if "OK" in res.text:
-                    self.log(f"{hijau}success earn {putih}{point}{hijau} from game !")
-                    balance = self.get_balance(access_token, only_show_balance=True)  # Update balance setelah tiap game
-                    random_delay(1, 3)  # Tunda setelah mengklaim poin
-                else:
+                    message = res.json().get("message", "")
+                    if message == "game session not finished":
+                        continue
+
+                    if "OK" in res.text:
+                        self.log(f"{hijau}success earn {putih}{point}{hijau} from game !")
+                        balance = self.get_balance(access_token, only_show_balance=True)  # Update balance setelah tiap game
+                        random_delay(1, 3)  # Tunda setelah mengklaim poin
+                        break  # Keluar dari loop "while True" jika sukses klaim poin
+
                     self.log(f"{merah}failed earn {putih}{point}{merah} from game !")
                     random_delay(1, 3)  # Tunda setelah gagal mengklaim poin
+                    break  # Keluar dari loop "while True" jika gagal klaim poin
+
         return balance  # Pastikan balance terakhir selalu dikembalikan
 
     def data_parsing(self, data):
@@ -521,15 +557,20 @@ class BlumTod:
 
 
     def load_config(self):
-        config = json.loads(open("config.json", "r", encoding="utf-8").read())
-        self.AUTOTASK = config["auto_complete_task"]
-        self.AUTOGAME = config["auto_play_game"]
-        self.DEFAULT_INTERVAL = config["interval"]
-        self.MIN_WIN = config["game_point"]["low"]
-        self.MAX_WIN = config["game_point"]["high"]
-        if self.MIN_WIN > self.MAX_WIN:
-            self.log(f"{kuning}high value must be higher than lower value")
+        try:
+            config = json.loads(open("config.json", "r", encoding="utf-8").read())
+            self.AUTOTASK = config["auto_complete_task"]
+            self.AUTOGAME = config["auto_play_game"]
+            self.DEFAULT_INTERVAL = config["interval"]
+            self.MIN_WIN = config["game_point"]["low"]
+            self.MAX_WIN = config["game_point"]["high"]
+            if self.MIN_WIN > self.MAX_WIN:
+                self.log(f"{kuning}high value must be higher than lower value")
+                sys.exit()
+        except json.decoder.JSONDecodeError:
+            self.log(f"{merah}failed decode config.json")
             sys.exit()
+
 
     def ipinfo(self):
         if not self.running:

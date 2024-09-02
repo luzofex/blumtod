@@ -291,23 +291,19 @@ def edit_config_file():
             return jsonify({'status': 'failed', 'message': str(e)}), 500
     
     else:
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        try:
             post_edit_cleanup(config_file_path)  # Clean up config file before loading
-            try:
-                with open(config_file_path, 'r', encoding='utf-8') as config_file:
-                    config_data = json.load(config_file)
-                logger.info("Sending config data as JSON.")
-                return jsonify(config_data)
-            except FileNotFoundError:
-                logger.warning("config.json not found.")
-                return jsonify({"error": "config.json not found."}), 404
-            except Exception as e:
-                logger.error(f"Error loading config: {str(e)}")
-                return jsonify({"error": str(e)}), 500
-        else:
-            logger.info("Rendering the edit config HTML page.")
-            trim_log_file()
-            return render_template('edit_config.html')
+            with open(config_file_path, 'r', encoding='utf-8') as config_file:
+                config_data = json.load(config_file)
+            logger.info("Rendering the edit config HTML page with current config data.")
+            return render_template('edit_config.html', config=config_data)
+        except FileNotFoundError:
+            logger.warning("config.json not found.")
+            return render_template('edit_config.html', config={})
+        except Exception as e:
+            logger.error(f"Error loading config: {str(e)}")
+            return render_template('edit_config.html', config={})
+
 
 @app.route('/total_balance')
 def total_balance():

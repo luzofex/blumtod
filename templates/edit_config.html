@@ -70,64 +70,90 @@
 
         <!-- Status Config yang sedang digunakan -->
         <div id="current-config" class="alert alert-info text-light-custom bg-dark-custom" role="alert">
-            <!-- Informasi konfigurasi saat ini akan ditampilkan di sini -->
+            <strong>Current Config:</strong><br>
+            Interval: {{ config.interval or 3 }}<br>
+            Auto Complete Task: {{ 'True' if config.auto_complete_task else 'False' }}<br>
+            Auto Play Game: {{ 'True' if config.auto_play_game else 'False' }}<br>
+            Game Point Low: {{ config.game_point.low or 250 }}<br>
+            Game Point High: {{ config.game_point.high or 260 }}<br>
+            Min Win: {{ config.min_win or config.game_point.low or 250 }}<br>
+            Max Win: {{ config.max_win or config.game_point.high or 260 }}
         </div>
 
         <form id="config-form">
             <div class="mb-3">
                 <label for="interval" class="form-label">Interval:</label>
                 <select id="interval" class="form-select form-control-dark" name="interval">
-                    <option value="1">1</option>
-                    <option value="2">2</option>
-                    <option value="3" selected>3</option> <!-- Default value -->
-                    <option value="4">4</option>
-                    <option value="5">5</option>
-                    <option value="6">6</option>
-                    <option value="7">7</option>
-                    <option value="8">8</option>
-                    <option value="9">9</option>
-                    <option value="10">10</option>
+                    <option value="1" {% if config.interval == 1 %}selected{% endif %}>1</option>
+                    <option value="2" {% if config.interval == 2 %}selected{% endif %}>2</option>
+                    <option value="3" {% if config.interval == 3 %}selected{% endif %}>3</option>
+                    <option value="4" {% if config.interval == 4 %}selected{% endif %}>4</option>
+                    <option value="5" {% if config.interval == 5 %}selected{% endif %}>5</option>
+                    <option value="6" {% if config.interval == 6 %}selected{% endif %}>6</option>
+                    <option value="7" {% if config.interval == 7 %}selected{% endif %}>7</option>
+                    <option value="8" {% if config.interval == 8 %}selected{% endif %}>8</option>
+                    <option value="9" {% if config.interval == 9 %}selected{% endif %}>9</option>
+                    <option value="10" {% if config.interval == 10 %}selected{% endif %}>10</option>
                 </select>
             </div>
 
             <div class="mb-3">
                 <label for="auto_complete_task" class="form-label">Auto Complete Task:</label>
                 <select id="auto_complete_task" class="form-select form-control-dark" name="auto_complete_task">
-                    <option value="true">True</option>
-                    <option value="false" selected>False</option> <!-- Default value -->
+                    <option value="true" {% if config.auto_complete_task %}selected{% endif %}>True</option>
+                    <option value="false" {% if not config.auto_complete_task %}selected{% endif %}>False</option>
                 </select>
             </div>
 
             <div class="mb-3">
                 <label for="auto_play_game" class="form-label">Auto Play Game:</label>
                 <select id="auto_play_game" class="form-select form-control-dark" name="auto_play_game">
-                    <option value="true" selected>True</option> <!-- Default value -->
-                    <option value="false">False</option>
+                    <option value="true" {% if config.auto_play_game %}selected{% endif %}>True</option>
+                    <option value="false" {% if not config.auto_play_game %}selected{% endif %}>False</option>
                 </select>
             </div>
 
             <div class="mb-3">
                 <label for="game_point_low" class="form-label">Game Point Low:</label>
-                <input type="number" class="form-control form-control-dark" id="game_point_low" name="game_point_low" value="250"> <!-- Default value -->
+                <input type="number" class="form-control form-control-dark" id="game_point_low" name="game_point_low" value="{{ config.game_point.low or 250 }}">
             </div>
 
             <div class="mb-3">
                 <label for="game_point_high" class="form-label">Game Point High:</label>
-                <input type="number" class="form-control form-control-dark" id="game_point_high" name="game_point_high" value="260"> <!-- Default value -->
+                <input type="number" class="form-control form-control-dark" id="game_point_high" name="game_point_high" value="{{ config.game_point.high or 260 }}">
             </div>
 
             <div class="mb-3">
                 <label for="min_win" class="form-label">Min Win:</label>
-                <input type="number" class="form-control form-control-dark" id="min_win" name="min_win" value="250"> <!-- Default value -->
+                <input type="number" class="form-control form-control-dark" id="min_win" name="min_win" value="{{ config.min_win or config.game_point.low or 250 }}">
             </div>
 
             <div class="mb-3">
                 <label for="max_win" class="form-label">Max Win:</label>
-                <input type="number" class="form-control form-control-dark" id="max_win" name="max_win" value="260"> <!-- Default value -->
+                <input type="number" class="form-control form-control-dark" id="max_win" name="max_win" value="{{ config.max_win or config.game_point.high or 260 }}">
             </div>
 
-            <button type="button" class="btn btn-primary-custom" onclick="saveConfig()">Save Config</button>
+            <button type="button" class="btn btn-primary-custom" onclick="confirmSaveConfig()">Save Config</button>
         </form>
+    </div>
+
+    <!-- Modal untuk Konfirmasi Save Config -->
+    <div class="modal fade" id="saveConfigModal" tabindex="-1" aria-labelledby="saveConfigModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content bg-dark-custom text-light-custom">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="saveConfigModalLabel">Konfirmasi Save Config</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Apakah Anda yakin ingin menyimpan konfigurasi ini?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-primary-custom" onclick="saveConfig()">Save Config</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -137,47 +163,12 @@
             alertDiv.classList.remove('alert-success', 'alert-danger', 'alert-custom');
             alertDiv.classList.add(isSuccess ? 'alert-success' : 'alert-danger');
             alertDiv.textContent = message;
-            alertDiv.style.display = 'block'; // Tampilkan notifikasi
+            alertDiv.style.display = 'block';
         }
 
-        async function loadConfig() {
-            try {
-                const response = await fetch('/edit_config');
-                if (!response.ok) {
-                    throw new Error('Network response was not ok');
-                }
-                const data = await response.json();
-                console.log('Config data loaded:', data);  // Logging untuk debugging
-
-                // Set nilai form sesuai dengan data dari config.json
-                document.getElementById('interval').value = data.interval || 3;
-                document.getElementById('auto_complete_task').value = data.auto_complete_task ? 'true' : 'false';
-                document.getElementById('auto_play_game').value = data.auto_play_game ? 'true' : 'false';
-                document.getElementById('game_point_low').value = data.game_point?.low || 250;
-                document.getElementById('game_point_high').value = data.game_point?.high || 260;
-                document.getElementById('min_win').value = data.min_win || 250;
-                document.getElementById('max_win').value = data.max_win || 260;
-
-                // Tampilkan status konfigurasi saat ini
-                displayCurrentConfig(data);
-            } catch (error) {
-                console.error('Error loading config:', error);
-                showStatusAlert('Failed to load config data.', false);
-            }
-        }
-
-        function displayCurrentConfig(config) {
-            const configDiv = document.getElementById('current-config');
-            configDiv.innerHTML = `
-                <strong>Current Config:</strong><br>
-                Interval: ${config.interval || 3}<br>
-                Auto Complete Task: ${config.auto_complete_task ? 'True' : 'False'}<br>
-                Auto Play Game: ${config.auto_play_game ? 'True' : 'False'}<br>
-                Game Point Low: ${config.game_point?.low || 250}<br>
-                Game Point High: ${config.game_point?.high || 260}<br>
-                Min Win: ${config.min_win || 250}<br>
-                Max Win: ${config.max_win || 260}
-            `;
+        function confirmSaveConfig() {
+            const saveConfigModal = new bootstrap.Modal(document.getElementById('saveConfigModal'));
+            saveConfigModal.show();
         }
 
         async function saveConfig() {
@@ -213,12 +204,13 @@
                     throw new Error('Network response was not ok');
                 }
                 const data = await response.json();
-                console.log('Config saved:', data);  // Logging untuk debugging
                 showStatusAlert(data.status === 'Config updated successfully' ? 'Config saved successfully!' : 'Failed to save config.', data.status === 'Config updated successfully');
-                loadConfig(); // Setelah penyimpanan, muat ulang konfigurasi untuk memperbarui tampilan status
+                loadConfig();
             } catch (error) {
-                console.error('Error saving config:', error);
                 showStatusAlert('Failed to save config data.', false);
+            } finally {
+                const saveConfigModal = bootstrap.Modal.getInstance(document.getElementById('saveConfigModal'));
+                saveConfigModal.hide();
             }
         }
 

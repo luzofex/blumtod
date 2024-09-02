@@ -37,6 +37,18 @@
         .alert-custom {
             display: none; /* Notifikasi disembunyikan secara default */
         }
+        /* Styling untuk modal dengan tema dark */
+        .modal-content {
+            background-color: #333333;
+            color: #e0e0e0;
+            border: none;
+        }
+        .modal-header, .modal-footer {
+            border: none;
+        }
+        .btn-close {
+            filter: invert(1);
+        }
     </style>
 </head>
 <body>
@@ -83,8 +95,46 @@
         </div>
 
         <div>
-            <button class="btn btn-primary-custom" onclick="saveFile()">Save File</button>
-            <button class="btn btn-danger-custom" onclick="deleteFile()">Clear File</button>
+            <button class="btn btn-primary-custom" onclick="confirmSave()">Save File</button>
+            <button class="btn btn-danger-custom" onclick="confirmClear()">Clear File</button>
+        </div>
+    </div>
+
+    <!-- Modal untuk konfirmasi penyimpanan file -->
+    <div class="modal fade" id="saveFileModal" tabindex="-1" aria-labelledby="saveFileModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="saveFileModalLabel">Save File</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Apakah Anda yakin ingin menyimpan file <span id="file-name-confirm"></span>?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-primary" onclick="saveFile()">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal untuk konfirmasi penghapusan file -->
+    <div class="modal fade" id="clearFileModal" tabindex="-1" aria-labelledby="clearFileModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="clearFileModalLabel">Clear File</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    Apakah Anda yakin ingin mengosongkan file <span id="file-name-clear"></span>?
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Batal</button>
+                    <button type="button" class="btn btn-danger" onclick="deleteFile()">Clear</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -103,6 +153,13 @@
             fetch(`/edit_file?file_name=${fileName}`)
                 .then(response => response.json())
                 .then(data => document.getElementById('file-content').value = data.content);
+        }
+
+        function confirmSave() {
+            const fileName = document.getElementById('file-select').value;
+            document.getElementById('file-name-confirm').textContent = fileName;
+            var saveFileModal = new bootstrap.Modal(document.getElementById('saveFileModal'));
+            saveFileModal.show();
         }
 
         function saveFile() {
@@ -125,7 +182,17 @@
                   }
               }).catch(() => {
                   showStatusAlert('An error occurred while saving the file.', false);
+              }).finally(() => {
+                  var saveFileModal = bootstrap.Modal.getInstance(document.getElementById('saveFileModal'));
+                  saveFileModal.hide();
               });
+        }
+
+        function confirmClear() {
+            const fileName = document.getElementById('file-select').value;
+            document.getElementById('file-name-clear').textContent = fileName;
+            var clearFileModal = new bootstrap.Modal(document.getElementById('clearFileModal'));
+            clearFileModal.show();
         }
 
         function deleteFile() {
@@ -139,7 +206,7 @@
                 body: formData
             }).then(response => response.json())
               .then(data => {
-                  if (data.status === 'cleared') {  // Perbarui status berdasarkan perubahan pada backend
+                  if (data.status === 'cleared') {
                       document.getElementById('file-content').value = '';
                       showStatusAlert('File cleared successfully!', true);
                   } else {
@@ -147,6 +214,9 @@
                   }
               }).catch(() => {
                   showStatusAlert('An error occurred while clearing the file.', false);
+              }).finally(() => {
+                  var clearFileModal = bootstrap.Modal.getInstance(document.getElementById('clearFileModal'));
+                  clearFileModal.hide();
               });
         }
 
