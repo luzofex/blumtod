@@ -314,7 +314,15 @@ def total_balance():
         with open(balances_file, 'r', encoding='utf-8') as f:
             balances = json.load(f)
         try:
-            total_balance = sum(float(balance) for balance in balances.values())
+            total_balance = 0.0
+            for user_id, balance in balances.items():
+                try:
+                    float_balance = float(balance)
+                    total_balance += float_balance
+                except ValueError:
+                    logger.error(f"Invalid balance value for user {user_id}: {balance}")
+                    return jsonify({'error': f'Invalid balance value for user {user_id} in balances.json'}), 500
+            
             logger.info(f"Total balance calculated: {total_balance}")
             return jsonify({'total_balance': total_balance})
         except ValueError as e:

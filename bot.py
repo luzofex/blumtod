@@ -12,10 +12,9 @@ from urllib.parse import unquote, parse_qs
 from base64 import b64decode
 import pytz
 import re
-import pickle
+import random
 
 init(autoreset=True)
-random.seed(42)  # Set a consistent random seed
 
 # Daftar file yang diperlukan
 required_files = ['user-agent.txt', 'data.txt', 'proxies.txt']
@@ -28,12 +27,7 @@ for file_path in required_files:
         print(f"{file_path} created.")
     else:
         print(f"{file_path} already exists.")
-
-# Cek dan buat folder untuk cookies jika belum ada
-cookies_folder = 'cookies'
-if not os.path.exists(cookies_folder):
-    os.makedirs(cookies_folder)
-
+        
 # Definisikan timezone untuk Waktu Indonesia Barat (WIB)
 WIB = pytz.timezone('Asia/Jakarta')
 
@@ -98,9 +92,10 @@ class BlumTod:
             "first_account_time": self.first_account_time.isoformat() if self.first_account_time else None,
             "next_restart_time": self.next_restart_time.isoformat() if self.next_restart_time else None
         }
-
+        
         with open(self.state_file, 'w', encoding='utf-8') as f:
             json.dump(state, f)
+
 
     def load_state(self):
         """Memuat status akun yang sudah diproses dari file"""
@@ -119,178 +114,152 @@ class BlumTod:
         else:
             self.save_state()  # Jika file tidak ada, simpan state awal
 
+
     def get_user_agent_for_account(self, account_number):
         # Memuat ulang user-agent setiap kali diperlukan
+        global user_agents
         user_agents = load_user_agents()
-
+        
         # Mengembalikan User-Agent yang sama untuk setiap akun
         if not user_agents:
             self.log(f"{merah}Error: User-agent list is empty.")
             return None
-
+        
         if account_number not in account_user_agents:
             account_user_agents[account_number] = user_agents[account_number % len(user_agents)]
         return account_user_agents[account_number]
 
-    def renew_access_token(self, tg_data, session):
+
+    def renew_access_token(self, tg_data):
         headers = self.base_headers.copy()
         data = dp({"query": tg_data})
         headers["Content-Length"] = str(len(data))
         url = "https://gateway.blum.codes/v1/auth/provider/PROVIDER_TELEGRAM_MINI_APP"
+        res = self.http(url, headers, data)
+        if res is None:
+            self.log(f"{merah}Failed to fetch token from gateway.")
+            return False
 
-        attempts = 0
-        while attempts < self.MAX_ATTEMPTS:
-            res = self.http(session, url, headers, data)
-            if res is None:
-                self.countdown(3)
-                attempts += 1
-                self.log(f"Percobaan ke-{attempts}")
-                continue
-
+        try:
             token = res.json().get("token")
-            if token is None:
-                self.countdown(3)
-                attempts += 1
-                self.log(f"Percobaan ke-{attempts}")
-                continue
+        except ValueError:
+            self.log(f"{merah}Failed to parse JSON response for token.")
+            return False
 
-            access_token = token["access"]
-            self.log(f"{hijau}success get access token ")
-            return access_token
+        if token is None:
+            self.log(f"{merah}'token' is not found in response, check your data !!")
+            return False
 
-        # Jika percobaan gagal setelah MAX_ATTEMPTS
-        self.log(f"{merah}Gagal mendapatkan access token setelah {self.MAX_ATTEMPTS} percobaan.")
-        return None
+        access_token = token["access"]
+        self.log(f"{hijau}success get access token ")
+        return access_token
 
-    def solve_task(self, access_token, session):
+    def solve_task(self, access_token):
         if not self.running:
             return
         url_task = "https://game-domain.blum.codes/api/v1/tasks"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
+        res = self.http(url_task, headers)
+        if res is None:
+            self.log(f"{merah}Failed to fetch tasks.")
+            return
 
-        attempts = 0
-        while attempts < self.MAX_ATTEMPTS:
-            res = self.http(session, url_task, headers)
-            if res is None:
-                self.countdown(3)
-                attempts += 1
-                self.log(f"Percobaan ke-{attempts}")
-                continue
+        try:
+            tasks_list = res.json()
+        except ValueError:
+            self.log(f"{merah}Failed to parse task list.")
+            return
 
-            for tasks in res.json():
+        for tasks in tasks_list:
+            if not self.running:
+                break
+            if isinstance(tasks, str):
+                self.log(f"{kuning}failed get task list !")
+                return
+            for task in tasks.get("tasks", []):
                 if not self.running:
                     break
-                if isinstance(tasks, str):
-                    self.log(f"{kuning}failed get task list !")
-                    attempts += 1
-                    continue
-                for task in tasks.get("tasks"):
-                    if not self.running:
-                        break
-                    task_id = task.get("id")
-                    task_title = task.get("title")
-                    task_status = task.get("status")
-                    if task_status == "NOT_STARTED":
-                        url_start = f"https://game-domain.blum.codes/api/v1/tasks/{task_id}/start"
-                        res = self.http(session, url_start, headers, "")
-                        if res is None or "message" in res.text:
-                            continue
-
-                        url_claim = f"https://game-domain.blum.codes/api/v1/tasks/{task_id}/claim"
-                        res = self.http(session, url_claim, headers, "")
-                        if res is None or "message" in res.text:
-                            continue
-
-                        status = res.json().get("status")
-                        if status == "CLAIMED":
-                            self.log(f"{hijau}success complete task {task_id} !")
-                            random_delay(1, 3)  # Tunda setelah menyelesaikan tugas
-                            continue
-
+                task_id = task.get("id")
+                task_status = task.get("status")
+                if task_status == "NOT_STARTED":
+                    self.start_and_claim_task(task_id, headers)
+                else:
                     self.log(f"{kuning}already complete task {task_id} !")
-                return  # Keluar dari loop jika berhasil mendapatkan tugas
 
-        # Jika percobaan gagal setelah MAX_ATTEMPTS
-        self.log(f"{merah}Gagal menyelesaikan task setelah {self.MAX_ATTEMPTS} percobaan.")
-
-        # Switch proxy after max attempts
-        if self.use_proxy:
-            self.switch_proxy(session)
-
-    def set_proxy(self, session, proxy=None):
-        if proxy is not None:
-            session.proxies.update({"http": proxy, "https": proxy})
-
-    def claim_farming(self, access_token, session):
-        if not self.running:
+    def start_and_claim_task(self, task_id, headers):
+        url_start = f"https://game-domain.blum.codes/api/v1/tasks/{task_id}/start"
+        res = self.http(url_start, headers, "")
+        if res is None or "message" in res.text:
             return
+
+        url_claim = f"https://game-domain.blum.codes/api/v1/tasks/{task_id}/claim"
+        res = self.http(url_claim, headers, "")
+        if res is None or "message" in res.text:
+            return
+
+        status = res.json().get("status")
+        if status == "CLAIMED":
+            self.log(f"{hijau}success complete task {task_id} !")
+            random_delay(1, 3)  # Tunda setelah menyelesaikan tugas
+
+    def set_proxy(self, proxy=None):
+        self.ses = requests.Session()
+        if proxy is not None:
+            self.ses.proxies.update({"http": proxy, "https": proxy})
+
+    def claim_farming(self, access_token):
+        if not self.running:
+            return 0
         url = "https://game-domain.blum.codes/api/v1/farming/claim"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
+        res = self.http(url, headers, "")
+        if res is None:
+            self.log(f"{merah}Failed to claim farming balance.")
+            return 0  # Return default balance if failed
 
-        attempts = 0
-        while attempts < self.MAX_ATTEMPTS:
-            res = self.http(session, url, headers, "")
-            if res is None:
-                self.countdown(3)
-                attempts += 1
-                self.log(f"Percobaan ke-{attempts}")
-                continue
+        balance = res.json().get("availableBalance", 0)
+        self.log(f"{hijau}balance after claim : {putih}{balance}")
+        return balance
 
-            balance = res.json().get("availableBalance", 0)
-            self.log(f"{hijau}balance after claim : {putih}{balance}")
-            random_delay(1, 3)  # Tunda setelah klaim
-            return balance
-
-        # Jika percobaan gagal setelah MAX_ATTEMPTS
-        self.log(f"{merah}Gagal klaim farming setelah {self.MAX_ATTEMPTS} percobaan.")
-        # Switch proxy after max attempts
-        if self.use_proxy:
-            self.switch_proxy(session)
-
-        return None
-
-    def get_balance(self, access_token, session, only_show_balance=False):
+    def get_balance(self, access_token, only_show_balance=False):
         if not self.running:
-            return
+            return 0  # Return default balance if not running
         url = "https://game-domain.blum.codes/api/v1/user/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
-
-        attempts = 0
-        while attempts < self.MAX_ATTEMPTS:
-            res = self.http(session, url, headers)
+        
+        while True:
+            res = self.http(url, headers)
             if res is None:
-                self.countdown(3)
-                attempts += 1
-                self.log(f"Percobaan ke-{attempts}")
+                self.log(f"{merah}Failed to fetch balance, retrying...")
+                self.countdown(3)  # Tunggu sebelum mencoba lagi
                 continue
 
             balance = res.json().get("availableBalance", 0)
             self.log(f"{hijau}balance : {putih}{balance}")
+            
             if only_show_balance:
-                return balance
+                return balance  # Pastikan balance dikembalikan saat hanya ingin melihat balance
 
             timestamp = res.json().get("timestamp")
             if timestamp is None:
-                self.countdown(3)
-                attempts += 1
+                self.countdown(3)  # Tunggu beberapa detik sebelum mencoba lagi
                 continue
-
+            
             timestamp = round(timestamp / 1000)
-
+            
             if "farming" not in res.json().keys():
-                return False, "not_started", balance
+                return False, "not_started", balance  # Return dengan balance yang ada
 
             end_farming = res.json().get("farming", {}).get("endTime")
             if end_farming is None:
-                self.countdown(3)
-                attempts += 1
+                self.countdown(3)  # Tunggu beberapa detik sebelum mencoba lagi
                 continue
 
             end_farming = round(end_farming / 1000)
-
+            
             if timestamp > end_farming:
                 self.log(f"{hijau}now is time to claim farming !")
                 return True, end_farming, balance
@@ -301,224 +270,192 @@ class BlumTod:
             random_delay(1, 3)  # Tunda setelah pengecekan balance
             return False, end_farming, balance
 
-        # Jika percobaan gagal setelah MAX_ATTEMPTS
-        self.log(f"{merah}Gagal mendapatkan balance setelah {self.MAX_ATTEMPTS} percobaan.")
-        
-        # Switch proxy after max attempts
-        if self.use_proxy:
-            self.switch_proxy(session)
-        
-        return None, "failed", None
 
-    def start_farming(self, access_token, session):
+    def start_farming(self, access_token):
         if not self.running:
-            return
+            return 0  # Return default farming end time if not running
         url = "https://game-domain.blum.codes/api/v1/farming/start"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
-
-        attempts = 0
-        while attempts < self.MAX_ATTEMPTS:
-            res = self.http(session, url, headers, "")
+        
+        while True:
+            res = self.http(url, headers, "")
             if res is None:
-                self.countdown(3)
-                attempts += 1
-                self.log(f"Percobaan ke-{attempts}")
+                self.log(f"{merah}Failed to start farming, retrying...")
+                self.countdown(3)  # Tunggu sebelum mencoba lagi
                 continue
 
-            end = res.json().get("endTime")
+            try:
+                end = res.json().get("endTime")
+            except ValueError:
+                self.log(f"{merah}Failed to parse JSON response for farming.")
+                self.countdown(3)  # Tunggu sebelum mencoba lagi
+                continue
+
             if end is None:
                 self.countdown(3)
-                attempts += 1
                 continue
+            break
 
-            end_date = datetime.fromtimestamp(end / 1000)
-            self.log(f"{hijau}start farming successfully !")
-            self.log(f"{hijau}end farming : {putih}{end_date}")
-            random_delay(1, 3)  # Tunda setelah memulai farming
-            return round(end / 1000)
+        end_date = datetime.fromtimestamp(end / 1000)
+        self.log(f"{hijau}start farming successfully !")
+        self.log(f"{hijau}end farming : {putih}{end_date}")
+        random_delay(1, 3)  # Tunda setelah memulai farming
+        return round(end / 1000)
 
-        # Jika percobaan gagal setelah MAX_ATTEMPTS
-        self.log(f"{merah}Gagal memulai farming setelah {self.MAX_ATTEMPTS} percobaan.")
-        
-        # Switch proxy after max attempts
-        if self.use_proxy:
-            self.switch_proxy(session)
-        
-        return None
 
-    def get_friend(self, access_token, session):
+    def get_friend(self, access_token):
         if not self.running:
             return
         url = "https://gateway.blum.codes/v1/friends/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
+        res = self.http(url, headers)
+        if res is None:
+            self.log(f"{merah}Failed to fetch friend balance.")
+            return
 
-        attempts = 0
-        while attempts < self.MAX_ATTEMPTS:
-            res = self.http(session, url, headers)
-            if res is None:
-                self.countdown(3)
-                attempts += 1
-                self.log(f"Percobaan ke-{attempts}")
-                continue
-
+        try:
             can_claim = res.json().get("canClaim", False)
             limit_invite = res.json().get("limitInvitation", 0)
             amount_claim = res.json().get("amountForClaim")
-            self.log(f"{putih}limit invitation : {hijau}{limit_invite}")
-            self.log(f"{hijau}referral balance : {putih}{amount_claim}")
-            self.log(f"{putih}can claim referral : {hijau}{can_claim}")
-            
-            if can_claim:
-                url_claim = "https://gateway.blum.codes/v1/friends/claim"
-                res = self.http(session, url_claim, headers, "")
-                if res is None or res.json().get("claimBalance") is not None:
-                    self.log(f"{hijau}success claim referral bonus !")
-                    random_delay(1, 3)  # Tunda setelah klaim
-                    return
+        except ValueError:
+            self.log(f"{merah}Failed to parse JSON response for friend balance.")
+            return
+
+        self.log(f"{putih}limit invitation : {hijau}{limit_invite}")
+        self.log(f"{hijau}referral balance : {putih}{amount_claim}")
+        self.log(f"{putih}can claim referral : {hijau}{can_claim}")
+        if can_claim:
+            url_claim = "https://gateway.blum.codes/v1/friends/claim"
+            res = self.http(url_claim, headers, "")
+            if res is None or res.json().get("claimBalance") is None:
                 self.log(f"{merah}failed claim referral bonus !")
-                attempts += 1  # Increment the attempts if claiming failed
-                continue  # Retry if failed
+            else:
+                self.log(f"{hijau}success claim referral bonus !")
+            random_delay(1, 3)  # Tunda setelah klaim
+        random_delay(1, 3)  # Tunda setelah pengecekan teman
 
-            random_delay(1, 3)  # Tunda setelah pengecekan teman
-            return  # Return if no need to claim or after success
-        
-        # Jika percobaan gagal setelah MAX_ATTEMPTS
-        self.log(f"{merah}Gagal claim referral bonus setelah {self.MAX_ATTEMPTS} percobaan.")
-        
-        # Switch proxy after max attempts
-        if self.use_proxy:
-            self.switch_proxy(session)
-
-    def checkin(self, access_token, session):
+    def checkin(self, access_token):
         if not self.running:
             return
         url = "https://game-domain.blum.codes/api/v1/daily-reward?offset=-420"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
+        res = self.http(url, headers)
+        if res is None:
+            self.log(f"{merah}Failed to perform daily check-in.")
+            return
 
-        attempts = 0
-        while attempts < self.MAX_ATTEMPTS:
-            res = self.http(session, url, headers)
-            self.countdown(10)
-            if res is None:
-                self.countdown(10)
-                attempts += 1
-                self.log(f"Percobaan ke-{attempts}")
-                continue
+        if res.status_code == 404:
+            self.log(f"{kuning}already check in today !")
+            return
 
-            if res.status_code == 400:
-                self.log(f"{kuning}already check in today !")
-                return
-            elif "ok" in res.text.lower():
-                self.log(f"{hijau}success check in today !")
-                random_delay(1, 3)  # Tunda setelah check-in
-                return
+        res = self.http(url, headers, "")
+        if res is None or "ok" not in res.text.lower():
+            self.log(f"{merah}failed check in today !")
+        else:
+            self.log(f"{hijau}success check in today !")
+        random_delay(1, 3)  # Tunda setelah check-in
 
-            self.log(f"{merah}failed check in today, attempt {attempts + 1} of {self.MAX_ATTEMPTS} !")
-            random_delay(1, 3)  # Tunda setelah check-in gagal
-            attempts += 1
-
-        # Jika percobaan gagal setelah MAX_ATTEMPTS
-        self.log(f"{merah}Gagal check in setelah {self.MAX_ATTEMPTS} percobaan.")
-        
-        # Switch proxy after max attempts
-        if self.use_proxy:
-            self.switch_proxy(session)
-
-    def playgame(self, access_token, session):
+    def playgame(self, access_token):
         if not self.running:
             return
+
         url_play = "https://game-domain.blum.codes/api/v1/game/play"
         url_claim = "https://game-domain.blum.codes/api/v1/game/claim"
         url_balance = "https://game-domain.blum.codes/api/v1/user/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
+        
+        max_retries = 5  # Batasi jumlah percobaan untuk memulai game
+        retries = 0
 
         while self.running:
-            res = self.http(session, url_balance, headers)
-            if res is None:
+            # Dapatkan jumlah tiket yang tersedia
+            res = self.http(url_balance, headers)
+            if res is None or res.status_code != 200:
                 self.log(f"{merah}Failed to fetch balance, skipping playgame.")
-                return None
+                return
 
-            play = res.json().get("playPasses", 0)
-            balance = res.json().get("availableBalance", 0)  # Ambil balance terakhir
+            try:
+                play = res.json().get("playPasses")
+            except ValueError:
+                self.log(f"{merah}Failed to parse JSON response for balance. Raw response: {res.text}")
+                return
 
-            self.log(f"{hijau}you have {putih}{play}{hijau} game ticket(s)")
-            self.log(f"{hijau}current balance : {putih}{balance}")
+            if play is None or play <= 0:
+                self.log(f"{kuning}No game tickets available.")
+                return
 
-            if play == 0:
-                self.log(f"{kuning}No more game tickets left, saving balance and moving to next step.")
-                return balance  # Kembalikan balance terakhir untuk disimpan
+            self.log(f"{hijau}You have {putih}{play}{hijau} game ticket(s).")
 
             for _ in range(play):
                 if not self.running:
                     break
+
                 if self.is_expired(access_token):
                     return True
 
-                attempts = 0
-                while attempts < self.MAX_ATTEMPTS:
-                    # Memulai game
-                    res = self.http(session, url_play, headers, "")
-                    if res is None:
-                        self.countdown(3)
-                        attempts += 1
-                        continue
+                # Mulai permainan
+                res = self.http(url_play, headers, "")
+                if res is None or res.status_code != 200:
+                    self.log(f"{merah}Failed to start game, skipping.")
+                    retries += 1
+                    if retries >= max_retries:
+                        self.log(f"{merah}Max retries reached, exiting game loop.")
+                        return
+                    random_delay(1, 3)
+                    continue
 
+                try:
                     game_id = res.json().get("gameId")
+                except ValueError:
+                    self.log(f"{merah}Failed to parse JSON response for game play. Raw response: {res.text}")
+                    retries += 1
+                    if retries >= max_retries:
+                        self.log(f"{merah}Max retries reached, exiting game loop.")
+                        return
+                    continue
 
-                    if game_id is None:
-                        message = res.json().get("message", "")
-                        if message == "cannot start game":
-                            self.log(f"{kuning}{message}, will be tried again in the next round.")
-                            attempts += 1
-                            continue
-                        self.log(f"{kuning}{message}")
-                        random_delay(1, 3)  # Tunda jika tidak bisa memulai game
-                        attempts += 1
-                        continue
+                if game_id is None:
+                    message = res.json().get("message", "")
+                    self.log(f"{kuning}{message}, will try again in the next round.")
+                    retries += 1
+                    if retries >= max_retries:
+                        self.log(f"{merah}Max retries reached, exiting game loop.")
+                        return
+                    random_delay(1, 3)
+                    continue
 
-                    while True:
-                        self.countdown(30)
+                retries = 0  # Reset retries setelah sukses memulai game
+                while True:
+                    self.countdown(30)
 
-                        # Klaim poin setelah bermain
-                        point = random.randint(self.MIN_WIN, self.MAX_WIN)
-                        data = json.dumps({"gameId": game_id, "points": point})
-                        res = self.http(session, url_claim, headers, data)
+                    # Klaim poin setelah permainan
+                    point = random.randint(self.MIN_WIN, self.MAX_WIN)
+                    data = json.dumps({"gameId": game_id, "points": point})
+                    res = self.http(url_claim, headers, data)
 
-                        if res is None:
-                            self.log(f"{merah}Failed to claim points, retrying...")
-                            attempts += 1
-                            continue
+                    if res is None or res.status_code != 200:
+                        self.log(f"{merah}Failed to claim points. Moving to the next game.")
+                        break
 
-                        message = res.json().get("message", "")
-                        if message == "game session not finished":
-                            continue
-
+                    try:
                         if "OK" in res.text:
-                            self.log(f"{hijau}success earn {putih}{point}{hijau} from game !")
-                            balance = self.get_balance(access_token, session, only_show_balance=True)  # Update balance setelah tiap game
-                            random_delay(1, 3)  # Tunda setelah mengklaim poin
-                            break  # Keluar dari loop "while True" jika sukses klaim poin
+                            self.log(f"{hijau}Successfully earned {putih}{point}{hijau} points!")
+                            break
+                        else:
+                            message = res.json().get("message", "")
+                            if message == "game session not found" or message == "game session not finished":
+                                self.log(f"{merah}{message}, moving to the next game.")
+                                break
+                    except ValueError:
+                        self.log(f"{merah}Failed to parse JSON response for claim. Raw response: {res.text}")
+                        break
 
-                        self.log(f"{merah}failed earn {putih}{point}{merah} from game !")
-                        random_delay(1, 3)  # Tunda setelah gagal mengklaim poin
-                        break  # Keluar dari loop "while True" jika gagal klaim poin
-
-                    # Reset attempts jika game berhasil dimulai
-                    attempts = 0
+                    random_delay(1, 3)
                     break
-
-            # Jika percobaan gagal setelah MAX_ATTEMPTS
-            self.log(f"{merah}Gagal memulai game setelah {self.MAX_ATTEMPTS} percobaan.")
-
-            # Switch proxy after max attempts
-            if self.use_proxy:
-                self.switch_proxy(session)
-
-        return balance  # Pastikan balance terakhir selalu dikembalikan
 
     def data_parsing(self, data):
         return {k: v[0] for k, v in parse_qs(data).items()}
@@ -526,13 +463,13 @@ class BlumTod:
     def log(self, message):
         now = datetime.now(WIB).isoformat(" ").split(".")[0]
         log_message = f"{now} {message}"
-
+        
         # Cetak ke terminal dengan warna
         print(f"{hitam}[{now}]{reset} {message}")
-
+        
         # Hapus kode warna sebelum menyimpan ke file log
         clean_message = re.sub(r'\x1b\[[0-9;]*m', '', log_message)
-
+        
         # Simpan log ke file bot.log dengan encoding utf-8
         with open("bot.log", "a", encoding="utf-8") as log_file:
             log_file.write(f"{clean_message}\n")
@@ -553,22 +490,6 @@ class BlumTod:
         except Exception as e:
             print(f"Failed to trim log file: {str(e)}")
             self.log(f"{merah}Failed to trim log file: {str(e)}")
-
-    def save_cookies(self, session, userid):
-        cookies_file = os.path.join('cookies', f'cookies_{userid}.pkl')
-        with open(cookies_file, 'wb') as f:
-            pickle.dump(session.cookies, f)
-
-    def load_cookies(self, session, userid):
-        cookies_file = os.path.join('cookies', f'cookies_{userid}.pkl')
-        if os.path.exists(cookies_file):
-            with open(cookies_file, 'rb') as f:
-                session.cookies.update(pickle.load(f))
-
-    def create_session(self, userid):
-        session = requests.Session()
-        self.load_cookies(session, userid)
-        return session
 
     def get_local_token(self, userid):
         if not os.path.exists("tokens.json"):
@@ -607,17 +528,60 @@ class BlumTod:
         acc[str(userid)] = data
         open(file, "w", encoding="utf-8").write(json.dumps(acc, indent=4))
 
-    def save_account_balance(self, userid, balance):
+    def save_account_balance(self, account_name, balance):
+        """Simpan balance ke balances.json menggunakan nama akun sebagai kunci."""
         if not os.path.exists("balances.json"):
             open("balances.json", "w", encoding="utf-8").write(json.dumps({}))
+        
         balances = json.loads(open("balances.json", "r", encoding="utf-8").read())
-        balances[str(userid)] = balance
-        open("balances.json", "w", encoding="utf-8").write(json.dumps(balances, indent=4))
+        balances[account_name] = balance or 0
+        
+        with open("balances.json", "w", encoding="utf-8") as f:
+            json.dump(balances, f, indent=4)
 
-    def process_account(self, account, user_agents, save_state_callback):
+    def update_balance(self, access_token, new_balance):
+        """Update balances.json with the new balance for the user."""
+        try:
+            userid = self.get_user_id_from_token(access_token)
+            if userid:
+                self.save_account_balance(userid, new_balance)
+        except Exception as e:
+            self.log(f"{merah}Failed to update balance in balances.json: {str(e)}")
+
+    def get_user_id_from_token(self, token):
+        """Extract user ID from the access token."""
+        try:
+            payload = json.loads(b64decode(token.split(".")[1] + "==").decode())
+            return str(payload.get("sub"))
+        except Exception as e:
+            self.log(f"{merah}Failed to parse user ID from token: {str(e)}")
+            return None
+
+    def save_account_balance(self, account_name, balance):
+        """Simpan balance ke balances.json menggunakan nama akun sebagai kunci."""
+        if not os.path.exists("balances.json"):
+            open("balances.json", "w", encoding="utf-8").write(json.dumps({}))
+        
+        balances = json.loads(open("balances.json", "r", encoding="utf-8").read())
+        balances[account_name] = balance or 0
+        
+        with open("balances.json", "w", encoding="utf-8") as f:
+            json.dump(balances, f, indent=4)
+
+    def check_and_save_balance(self, access_token, account_name):
+        """Mengirim permintaan ke server untuk mengecek balance akun dan menyimpannya."""
+        balance = self.get_balance(access_token, only_show_balance=True)
+        if balance is not None:
+            self.save_account_balance(account_name, balance)
+            self.log(f"{hijau}Balance for {account_name} saved: {putih}{balance}")
+        else:
+            self.log(f"{merah}Failed to retrieve balance for {account_name}")
+
+    def process_account(self, account, user_agents, access_token, save_state_callback):
         try:
             # Log proses akun dimulai
-            self.log(f"Processing account for user: {account['user']['first_name']}")
+            account_name = account['user']['first_name']  # Ambil nama akun
+            self.log(f"Processing account for user: {account_name}")
 
             # Menggunakan user-agent khusus untuk akun ini
             session_user_agent = self.get_user_agent_for_account(account['query_id'])
@@ -629,60 +593,58 @@ class BlumTod:
                 return {"status": "error", "message": "User-Agent list is empty."}
 
             # Set proxy jika diperlukan
-            session = self.create_session(account['user']['id'])
             if self.use_proxy:
                 proxy = self.proxies[account['query_id'] % len(self.proxies)]
-                self.set_proxy(session, proxy)
+                self.set_proxy(proxy)
                 self.ipinfo()
 
             # Dapatkan token akses
-            access_token = self.get_local_token(account['user']['id'])
             if not access_token:
-                access_token = self.renew_access_token(account['user'], session)
+                access_token = self.renew_access_token(account['user'])
                 if not access_token:
-                    self.save_failed_token(account['user']['id'], account)
+                    self.save_failed_token(account_name, account)
                     return {"status": "error", "message": "Failed to renew access token"}
 
                 self.save_local_token(account['user']['id'], access_token)
 
             # Cek apakah token sudah kadaluarsa
             if self.is_expired(access_token):
-                access_token = self.renew_access_token(account['user'], session)
+                access_token = self.renew_access_token(account['user'])
                 if not access_token:
                     return {"status": "error", "message": "Access token expired and cannot be renewed"}
 
             # Proses akun: contoh mengerjakan task dan mengklaim balance
-            self.checkin(access_token, session)
-            self.get_friend(access_token, session)
+            self.checkin(access_token)
+            self.get_friend(access_token)
             if self.AUTOTASK:
-                self.solve_task(access_token, session)
+                self.solve_task(access_token)
 
             # Dapatkan balance, klaim farming jika perlu
-            status, res_bal, balance = self.get_balance(access_token, session)
+            status, res_bal, balance = self.get_balance(access_token)
             if status:
-                res_bal = self.claim_farming(access_token, session)
-                self.start_farming(access_token, session)
+                res_bal = self.claim_farming(access_token)
+                self.start_farming(access_token)
             if isinstance(res_bal, str):
-                self.start_farming(access_token, session)
+                self.start_farming(access_token)
             if self.AUTOGAME:
-                balance = self.playgame(access_token, session)
+                balance = self.playgame(access_token)
 
-            # Simpan balance setelah semua proses untuk akun selesai
-            self.save_account_balance(account['user']['id'], balance)
-
-            # Simpan cookie setelah proses selesai
-            self.save_cookies(session, account['user']['id'])
-
+            # Cek balance dan simpan ke balances.json setelah proses selesai
+            self.check_and_save_balance(access_token, account_name)
+            
             # Panggil callback untuk menyimpan state
-            save_state_callback(account['user']['id'], {"balance": balance})
+            save_state_callback(account_name, {"balance": balance})
 
             # Kembalikan hasil yang berhasil
             return {"status": "success", "balance": balance}
 
         except Exception as e:
-            self.log(f"Error processing account for {account['user']['first_name']}: {str(e)}")
+            self.log(f"Error processing account for {account_name}: {str(e)}")
             return {"status": "error", "message": str(e)}
 
+
+
+        
     def sum_all_balances(self):
         """Menjumlahkan semua balance yang ada di balances.json."""
         if not os.path.exists("balances.json"):
@@ -697,7 +659,7 @@ class BlumTod:
         if self.first_account_time is None:
             self.remaining_delay = 0
             return self.remaining_delay
-
+        
         # Menghasilkan delay acak antara 8 hingga 10 jam dalam detik
         self.remaining_delay = random.uniform(8 * 3600, 10 * 3600)
         return self.remaining_delay
@@ -710,14 +672,16 @@ class BlumTod:
         # Hitung delay dan tetapkan next_restart_time
         self.calculate_remaining_delay()
         self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)
-
+        
         # Format waktu restart untuk output
         formatted_restart_time = self.next_restart_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
-
+        
         # Simpan ke bot_state.json
         self.save_state()  # Simpan state ke bot_state.json
-
+        
         return formatted_restart_time
+
+
 
     def load_config(self):
         try:
@@ -727,7 +691,6 @@ class BlumTod:
             self.DEFAULT_INTERVAL = config["interval"]
             self.MIN_WIN = config["game_point"]["low"]
             self.MAX_WIN = config["game_point"]["high"]
-            self.MAX_ATTEMPTS = config.get("max_attempts", 5)  # Ambil nilai max_attempts dari config.json
             if self.MIN_WIN > self.MAX_WIN:
                 self.log(f"{kuning}high value must be higher than lower value")
                 sys.exit()
@@ -735,10 +698,11 @@ class BlumTod:
             self.log(f"{merah}failed decode config.json")
             sys.exit()
 
+
     def ipinfo(self):
         if not self.running:
             return
-        res = self.http(requests.Session(), "https://ipinfo.io/json", {"content-type": "application/json"})
+        res = self.http("https://ipinfo.io/json", {"content-type": "application/json"})
         if res is False:
             return False
         if res.status_code != 200:
@@ -753,61 +717,75 @@ class BlumTod:
         random_delay(1, 3)  # Tunda setelah mendapatkan info IP
         return True
 
-    def http(self, session, url, headers, data=None):
+    def http(self, url, headers, data=None):
         retry_count = 0
+        proxy_switch_count = 0
         max_retries = 5  # Batas percobaan ulang sebelum mengganti proxy
+        max_proxy_switches = 3  # Batas pergantian proxy sebelum melanjutkan ke proses akun selanjutnya
 
-        while self.running and retry_count < max_retries:
+        while self.running:
             try:
                 logfile = "http.log"
                 if not os.path.exists(logfile):
                     open(logfile, "a", encoding="utf-8").close()
                 logsize = os.path.getsize(logfile)
-                if logsize > (1024 * 2) > 1:
+                if logsize > (1024 * 2):
                     open(logfile, "w", encoding="utf-8").write("")
 
                 if data is None:
-                    res = session.get(url, headers=headers, timeout=30)
+                    res = self.ses.get(url, headers=headers, timeout=30)
                 elif data == "":
-                    res = session.post(url, headers=headers, timeout=30)
+                    res = self.ses.post(url, headers=headers, timeout=30)
                 else:
-                    res = session.post(url, headers=headers, data=data, timeout=30)
+                    res = self.ses.post(url, headers=headers, data=data, timeout=30)
 
                 open("http.log", "a", encoding="utf-8").write(res.text + "\n")
                 if "<title>" in res.text:
-                    self.log(f"{merah}failed fetch json response !")
+                    self.log(f"{merah}Failed to fetch JSON response!")
                     time.sleep(2)
                     continue
 
                 return res
 
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
-                self.log(f"{merah}connection error/connection timeout!")
+                self.log(f"{merah}Connection error/connection timeout!")
                 retry_count += 1
                 if retry_count >= max_retries:
                     self.log(f"{kuning}Switching proxy...")
-                    self.switch_proxy(session)
+                    self.switch_proxy()
+                    time.sleep(30)  # Tunggu 30 detik setelah mengganti proxy
                     retry_count = 0  # Reset retry count setelah switching proxy
+                    proxy_switch_count += 1
+                    if proxy_switch_count >= max_proxy_switches:
+                        self.log(f"{merah}Max proxy switches reached, moving to the next process.")
+                        return None  # Berhenti mencoba dan lanjut ke akun selanjutnya
 
             except requests.exceptions.ProxyError:
-                self.log(f"{merah}bad proxy")
-                self.switch_proxy(session)
+                self.log(f"{merah}Bad proxy!")
+                self.switch_proxy()
+                time.sleep(30)  # Tunggu 30 detik setelah mengganti proxy
                 retry_count = 0  # Reset retry count setelah switching proxy
+                proxy_switch_count += 1
+                if proxy_switch_count >= max_proxy_switches:
+                    self.log(f"{merah}Max proxy switches reached, moving to the next process.")
+                    return None  # Berhenti mencoba dan lanjut ke akun selanjutnya
 
-        self.log(f"{merah}max retries reached, skipping this request...")
-        return None
+        self.log(f"{merah}Max retries reached, moving to the next process.")
+        return None  # Mengembalikan None atau nilai khusus lainnya untuk menunjukkan kegagalan
 
-    def switch_proxy(self, session):
+
+    def switch_proxy(self):
         """Ganti proxy dengan salah satu dari daftar proxy yang ada."""
         if not self.running:
             return
         if self.proxies:
             new_proxy = random.choice(self.proxies)
-            self.set_proxy(session, new_proxy)
+            self.set_proxy(new_proxy)
             self.log(f"{kuning}Proxy changed to: {new_proxy}")
             random_delay(1, 3)  # Tunda setelah mengganti proxy
         else:
-            self.log(f"{merah}No proxies available, skipping proxy change...")
+            self.log(f"{merah}No proxies available, exiting...")
+            sys.exit()
 
     def reset_first_account_time_if_needed(self):
         """Reset first_account_time jika sudah lebih dari 10 jam."""
@@ -834,10 +812,10 @@ class BlumTod:
     def main(self):
         banner = f"""
     {hijau}AUTO CLAIM FOR {putih}BLUM {hijau}/ {biru}@BlumCryptoBot
-
+    
     {hijau}By : {putih}t.me/AkasakaID
     {putih}Github : {hijau}@AkasakaID
-
+    
     {hijau}Message : {putih}Dont forget to 'git pull' maybe I update the bot !
         """
         arg = argparse.ArgumentParser()
@@ -890,7 +868,7 @@ class BlumTod:
         while self.running:  # Loop tak terbatas
             # Reset first_account_time jika sudah lebih dari 10 jam
             self.reset_first_account_time_if_needed()
-            
+
             # Acak urutan akun, tetapi jangan memproses ulang akun yang sudah selesai
             remaining_accounts = [
                 (index, data) for index, data in enumerate(datas)
@@ -922,16 +900,15 @@ class BlumTod:
                         self.base_headers["user-agent"] = session_user_agent
                         self.log(f"{kuning}Using User-Agent: {session_user_agent}")
 
-                        session = self.create_session(userid)
                         if use_proxy:
                             proxy = proxies[index % len(proxies)]
-                        self.set_proxy(session, proxy if use_proxy else None)
+                        self.set_proxy(proxy if use_proxy else None)
                         self.ipinfo() if use_proxy else None
                         access_token = self.get_local_token(userid)
                         failed_fetch_token = False
                         while self.running:
                             if access_token is False:
-                                access_token = self.renew_access_token(data, session)
+                                access_token = self.renew_access_token(data)
                                 if access_token is False:
                                     self.save_failed_token(userid, data)
                                     failed_fetch_token = True
@@ -944,30 +921,27 @@ class BlumTod:
                             break
                         if failed_fetch_token:
                             continue
-                        self.checkin(access_token, session)
-                        self.get_friend(access_token, session)
+                        self.checkin(access_token)
+                        self.get_friend(access_token)
                         if self.AUTOTASK:
-                            self.solve_task(access_token, session)
-                        status, res_bal, balance = self.get_balance(access_token, session)
+                            self.solve_task(access_token)
+                        status, res_bal, balance = self.get_balance(access_token)
                         if status:
-                            res_bal = self.claim_farming(access_token, session)
-                            self.start_farming(access_token, session)
+                            res_bal = self.claim_farming(access_token)
+                            self.start_farming(access_token)
                         if isinstance(res_bal, str):
-                            self.start_farming(access_token, session)
+                            self.start_farming(access_token)
                         if self.AUTOGAME:
-                            balance = self.playgame(access_token, session)
+                            balance = self.playgame(access_token)
 
                         # Simpan balance setelah semua proses untuk akun selesai
                         self.save_account_balance(userid, balance)
                         print(self.garis)
                         self.countdown(self.DEFAULT_INTERVAL)
-
+                        
                         # Tandai akun ini sebagai sudah diproses dan simpan status
                         self.processed_accounts.add(index)
                         self.save_state()
-
-                        # Simpan cookie setelah semua proses selesai
-                        self.save_cookies(session, userid)
 
                     except Exception as e:
                         self.log(f"{merah}Error processing account {index + 1}: {str(e)}")
@@ -979,7 +953,6 @@ class BlumTod:
                     if index not in self.processed_accounts
                 ]
 
-            # Jika semua akun sudah diproses, reset processed_accounts dan mulai lagi
             if not remaining_accounts and self.running:
                 self.save_state()  # Simpan status yang telah di-reset
                 self.log(f"{hijau}All accounts processed. Restarting...")
@@ -1013,7 +986,6 @@ class BlumTod:
 
                 # Restart bot secara otomatis
                 self.main()  # Memulai ulang siklus utama bot
-
 
 if __name__ == "__main__":
     while True:  # Tambahkan loop tak terbatas agar bot terus mencoba untuk berjalan
