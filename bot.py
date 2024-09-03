@@ -706,7 +706,7 @@ class BlumTod:
         return True
 
     def http(self, url, headers, data=None):
-        global retry_counter  # Use the global retry_counter
+        global retry_counter  # Gunakan counter global
         retry_count = 0
         proxy_switch_count = 0
         max_retries = 5  # Batas percobaan ulang sebelum mengganti proxy
@@ -734,7 +734,7 @@ class BlumTod:
                     time.sleep(2)
                     continue
 
-                retry_counter = 0  # Reset the retry counter on a successful request
+                retry_counter = 0  # Reset retry counter on a successful request
                 return res
 
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
@@ -769,6 +769,7 @@ class BlumTod:
 
         self.log(f"{merah}Max retries reached, moving to the next process.")
         return None  # Mengembalikan None atau nilai khusus lainnya untuk menunjukkan kegagalan
+                        # Mengembalikan None atau nilai khusus lainnya untuk menunjukkan kegagalan
     def switch_proxy(self):
         """Ganti proxy dengan salah satu dari daftar proxy yang ada."""
         if not self.running:
