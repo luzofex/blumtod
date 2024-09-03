@@ -12,6 +12,7 @@ from urllib.parse import unquote, parse_qs
 from base64 import b64decode
 import pytz
 import re
+import signal
 
 init(autoreset=True)
 
@@ -39,6 +40,13 @@ for file_path in required_files:
         print(f"{file_path} created.")
     else:
         print(f"{file_path} already exists.")
+
+
+def stop(self):
+    """Menghentikan bot dengan mengirimkan sinyal SIGINT, seperti menekan Ctrl+C."""
+    self.log(f"Stopping the bot...")
+    self.running = False
+    os.kill(os.getpid(), signal.SIGINT)
 
 # Fungsi untuk membaca file dan mengabaikan baris kosong
 def load_file_lines(file_path):
@@ -675,6 +683,7 @@ class BlumTod:
         proxy_switch_count = 0
         max_retries = 5
         max_proxy_switches = 3
+        max_looping_errors = 3  # Batas looping error sebelum restart
 
         while self.running:
             try:
@@ -706,8 +715,8 @@ class BlumTod:
                 retry_count += 1
                 retry_counter += 1
 
-                if retry_counter >= 5:
-                    self.log(f"{merah}Max retry attempts reached. Restarting bot...")
+                if retry_counter >= max_looping_errors:
+                    self.log(f"{merah}Max looping errors reached. Restarting bot...")
                     self.save_state()
                     os.execl(sys.executable, sys.executable, *sys.argv)
 
@@ -733,6 +742,7 @@ class BlumTod:
 
         self.log(f"{merah}Max retries reached, moving to the next process.")
         return None
+
 
     def switch_proxy(self):
         """Ganti proxy dengan salah satu dari daftar proxy yang ada."""
@@ -967,3 +977,4 @@ if __name__ == "__main__":
         except Exception as e:
             print(f"{merah}Unexpected error: {str(e)}. Restarting bot in 10 seconds...")
             time.sleep(10)
+            os.execl(sys.executable, sys.executable, *sys.argv)

@@ -147,8 +147,8 @@ def stop_bot():
     global bot_thread, bot_instance
 
     if bot_instance is not None:
-        bot_instance.stop()
-        bot_thread.join()
+        bot_instance.stop()  # Panggil fungsi stop yang baru
+        bot_thread.join()  # Tunggu hingga thread selesai
         logger.info("Bot stopped.")
         bot_instance = None
         bot_thread = None
@@ -158,6 +158,7 @@ def stop_bot():
         logger.info("Attempted to stop bot, but it was not running.")
         trim_log_file()
         return jsonify({'status': 'Bot is not running'})
+
 
 @app.route('/status')
 def status():
