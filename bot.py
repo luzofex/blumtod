@@ -13,6 +13,7 @@ from base64 import b64decode
 import pytz
 import re
 import signal
+import socket
 
 init(autoreset=True)
 
@@ -48,6 +49,15 @@ def stop(self):
     self.running = False
     os.kill(os.getpid(), signal.SIGINT)
 
+def is_connected(hostname="8.8.8.8", port=53, timeout=3):
+    """Fungsi untuk memeriksa apakah ada koneksi internet"""
+    try:
+        socket.setdefaulttimeout(timeout)
+        socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect((hostname, port))
+        return True
+    except socket.error as ex:
+        return False
+
 # Fungsi untuk membaca file dan mengabaikan baris kosong
 def load_file_lines(file_path):
     """Membaca baris dari file dan mengabaikan baris kosong."""
@@ -69,6 +79,7 @@ class BlumTod:
     def __init__(self):
         self.running = True
         self.stop_requested = False
+        self.restart_requested = False
         self.base_headers = {
             "accept": "application/json, text/plain, */*",
             "content-type": "application/json",
@@ -94,7 +105,10 @@ class BlumTod:
     def restart_bot(self):
         self.log("Restarting the bot...")
         self.save_state()
-        os.execl(sys.executable, sys.executable, *sys.argv)  # Restart bot dengan menjalankan ulang script
+       # self.main()  # Panggil ulang fungsi main
+        self.running = True
+        self.main() 
+       # os.execl(sys.executable, sys.executable, *sys.argv)  # Restart bot dengan menjalankan ulang script
 
 
     def stop(self):
@@ -700,6 +714,11 @@ class BlumTod:
                 if logsize > (1024 * 2):
                     open(logfile, "w", encoding="utf-8").write("")
 
+                if not is_connected():  # Cek koneksi sebelum membuat request
+                    self.log(f"{merah}No internet connection! Waiting to reconnect...")
+                    self.countdown(30)  # Tunggu sebelum mencoba kembali
+                    continue
+
                 if data is None:
                     res = self.ses.get(url, headers=headers, timeout=30)
                 elif data == "":
@@ -977,10 +996,15 @@ if __name__ == "__main__":
         try:
             app = BlumTod()
             app.load_config()
-            app.main()
+
+            while app.running:  # Loop utama untuk menjalankan bot
+                app.main()
+
+            if not app.restart_requested:  # Cek apakah restart diminta
+                break  # Keluar dari loop utama jika tidak ada restart
+
         except KeyboardInterrupt:
             sys.exit()
         except Exception as e:
             print(f"{merah}Unexpected error: {str(e)}. Restarting bot in 10 seconds...")
             time.sleep(10)
-            os.execl(sys.executable, sys.executable, *sys.argv)
