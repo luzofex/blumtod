@@ -15,6 +15,7 @@ import re
 
 init(autoreset=True)
 
+retry_counter = 0
 # Daftar file yang diperlukan
 required_files = ['user-agent.txt', 'data.txt', 'proxies.txt']
 
@@ -65,6 +66,7 @@ class BlumTod:
 
     def __init__(self):
         self.running = True  # Tambahkan flag running untuk mengontrol loop
+        self.stop_requested = False  # Flag untuk menandakan stop
         self.base_headers = {
             "accept": "application/json, text/plain, */*",
             "content-type": "application/json",
@@ -98,6 +100,17 @@ class BlumTod:
         with open(self.state_file, 'w', encoding='utf-8') as f:
             json.dump(state, f)
 
+    def request_stop(self):
+        """Mengatur flag untuk menghentikan bot segera."""
+        self.stop_requested = True
+        self.log("Stop requested. The bot will stop immediately.")
+        self.running = False  # Menghentikan loop utama
+
+    def check_for_stop(self):
+        """Periksa apakah stop telah diminta dan keluar jika iya."""
+        if self.stop_requested:
+            self.log("Stopping the bot immediately.")
+            sys.exit(0)  # Keluar segera dari proses
 
     def load_state(self):
         """Memuat status akun yang sudah diproses dari file"""
@@ -504,14 +517,19 @@ class BlumTod:
         open("tokens.json", "w", encoding="utf-8").write(json.dumps(tokens, indent=4))
 
     def is_expired(self, token):
-        header, payload, sign = token.split(".")
-        payload = b64decode(payload + "==").decode()
-        jload = json.loads(payload)
-        now = round(datetime.now().timestamp()) + 300
-        exp = jload["exp"]
-        if now > exp:
-            return True
+        try:
+            header, payload, sign = token.split(".")
+            payload = b64decode(payload + "==").decode()
+            jload = json.loads(payload)
+            now = round(datetime.now().timestamp()) + 300
+            exp = jload["exp"]
+            if now > exp:
+                return True
+        except Exception as e:
+            self.log(f"{merah}Invalid JWT token detected: {str(e)}")
+            return True  # Menganggap token kadaluarsa jika terjadi error
 
+        return False
         return False
 
     def save_failed_token(self, userid, data):
@@ -566,11 +584,9 @@ class BlumTod:
 
     def process_account(self, account, access_token, save_state_callback):
         try:
-            # Log proses akun dimulai
-            account_name = account['user']['first_name']  # Ambil nama akun
+            account_name = account['user']['first_name']
             self.log(f"Processing account for user: {account_name}")
 
-            # Menggunakan user-agent khusus untuk akun ini
             session_user_agent = self.get_user_agent_for_account(account['query_id'])
             if session_user_agent:
                 self.base_headers["user-agent"] = session_user_agent
@@ -579,13 +595,11 @@ class BlumTod:
                 self.log(f"Skipping account due to empty user-agent list.")
                 return {"status": "error", "message": "User-Agent list is empty."}
 
-            # Set proxy jika diperlukan
             if self.use_proxy:
                 proxy = self.proxies[account['query_id'] % len(self.proxies)]
                 self.set_proxy(proxy)
                 self.ipinfo()
 
-            # Dapatkan token akses
             if not access_token:
                 access_token = self.renew_access_token(account['user'])
                 if not access_token:
@@ -594,19 +608,15 @@ class BlumTod:
 
                 self.save_local_token(account['user']['id'], access_token)
 
-            # Cek apakah token sudah kadaluarsa
             if self.is_expired(access_token):
-                access_token = self.renew_access_token(account['user'])
-                if not access_token:
-                    return {"status": "error", "message": "Access token expired and cannot be renewed"}
+                self.log(f"{merah}Access token is expired or invalid. Moving to the next account.")
+                return {"status": "error", "message": "Access token expired"}
 
-            # Proses akun: contoh mengerjakan task dan mengklaim balance
             self.checkin(access_token)
             self.get_friend(access_token)
             if self.AUTOTASK:
                 self.solve_task(access_token)
 
-            # Dapatkan balance, klaim farming jika perlu
             status, res_bal, balance = self.get_balance(access_token)
             if status:
                 res_bal = self.claim_farming(access_token)
@@ -616,13 +626,9 @@ class BlumTod:
             if self.AUTOGAME:
                 balance = self.playgame(access_token)
 
-            # Cek balance dan simpan ke balances.json setelah proses selesai
             self.check_and_save_balance(access_token, account_name)
-            
-            # Panggil callback untuk menyimpan state
             save_state_callback(account_name, {"balance": balance})
 
-            # Kembalikan hasil yang berhasil
             return {"status": "success", "balance": balance}
 
         except Exception as e:
@@ -700,6 +706,7 @@ class BlumTod:
         return True
 
     def http(self, url, headers, data=None):
+        global retry_counter  # Use the global retry_counter
         retry_count = 0
         proxy_switch_count = 0
         max_retries = 5  # Batas percobaan ulang sebelum mengganti proxy
@@ -727,11 +734,19 @@ class BlumTod:
                     time.sleep(2)
                     continue
 
+                retry_counter = 0  # Reset the retry counter on a successful request
                 return res
 
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
                 self.log(f"{merah}Connection error/connection timeout!")
                 retry_count += 1
+                retry_counter += 1  # Increment the global retry counter
+
+                if retry_counter >= 5:  # Check if the retry counter has reached 5
+                    self.log(f"{merah}Max retry attempts reached. Restarting bot...")
+                    self.save_state()  # Save the current bot state before restarting
+                    os.execl(sys.executable, sys.executable, *sys.argv)  # Restart the bot
+
                 if retry_count >= max_retries:
                     self.log(f"{kuning}Switching proxy...")
                     self.switch_proxy()
@@ -754,7 +769,6 @@ class BlumTod:
 
         self.log(f"{merah}Max retries reached, moving to the next process.")
         return None  # Mengembalikan None atau nilai khusus lainnya untuk menunjukkan kegagalan
-
     def switch_proxy(self):
         """Ganti proxy dengan salah satu dari daftar proxy yang ada."""
         if not self.running:
@@ -813,10 +827,10 @@ class BlumTod:
     def main(self):
         banner = f"""
     {hijau}AUTO CLAIM FOR {putih}BLUM {hijau}/ {biru}@BlumCryptoBot
-    
+
     {hijau}By : {putih}t.me/AkasakaID
     {putih}Github : {hijau}@AkasakaID
-    
+
     {hijau}Message : {putih}Dont forget to 'git pull' maybe I update the bot !
         """
         arg = argparse.ArgumentParser()
@@ -861,6 +875,8 @@ class BlumTod:
             self.save_state()  # Simpan state yang diperbarui
 
         while self.running:  # Loop tak terbatas
+            self.check_for_stop()  # Periksa apakah ada permintaan untuk stop
+            
             # Reset first_account_time jika sudah lebih dari 10 jam
             self.reset_first_account_time_if_needed()
 
@@ -874,6 +890,8 @@ class BlumTod:
             print(self.garis)
             while remaining_accounts and self.running:
                 for index, data in remaining_accounts:
+                    self.check_for_stop()  # Periksa apakah ada permintaan untuk stop
+
                     if not self.running:
                         break
                     if self.first_account_time is None:
@@ -902,6 +920,8 @@ class BlumTod:
                         access_token = self.get_local_token(userid)
                         failed_fetch_token = False
                         while self.running:
+                            self.check_for_stop()  # Periksa apakah ada permintaan untuk stop
+
                             if access_token is False:
                                 access_token = self.renew_access_token(data)
                                 if access_token is False:
@@ -942,6 +962,8 @@ class BlumTod:
                         self.log(f"{merah}Error processing account {index + 1}: {str(e)}")
                         self.log(f"{merah}Skipping account {index + 1} and moving to the next one.")
 
+                    self.check_for_stop()  # Periksa apakah ada permintaan untuk stop
+
                 # Perbarui remaining_accounts untuk menghapus akun yang sudah diproses
                 remaining_accounts = [
                     (index, data) for index, data in remaining_accounts
@@ -961,7 +983,6 @@ class BlumTod:
                     if remaining_time > 0:
                         self.countdown(int(remaining_time))
 
-
                 now = datetime.now(WIB)
                 random_delay(1, 3)
                 if now >= self.next_restart_time:
@@ -975,9 +996,7 @@ class BlumTod:
                 self.calculate_remaining_delay()
                 self.next_restart_time = self.first_account_time + timedelta(seconds=self.remaining_delay)
 
-
                 # Jika waktu sekarang lebih besar atau sama dengan waktu restart berikutnya, clear processed accounts
-
                 if now > (self.first_account_time + timedelta(hours=10)):
                     self.first_account_time = now
                     self.log(f"{kuning}Resetting first account time because it's been more than 10 hours.")
