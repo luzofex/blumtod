@@ -732,8 +732,8 @@ class BlumTod:
                     retry_count = 0
                     proxy_switch_count += 1
                     if proxy_switch_count >= max_proxy_switches:
-                        self.log(f"{merah}Max proxy switches reached, moving to the next process.")
-                        return None
+                        self.log(f"{merah}Max proxy switches reached, restarting main process...")
+                        return None  # Mengembalikan None untuk menghentikan loop utama
 
             except requests.exceptions.ProxyError:
                 self.log(f"{merah}Bad proxy!")
@@ -742,8 +742,8 @@ class BlumTod:
                 retry_count = 0
                 proxy_switch_count += 1
                 if proxy_switch_count >= max_proxy_switches:
-                    self.log(f"{merah}Max proxy switches reached, moving to the next process.")
-                    return None
+                    self.log(f"{merah}Max proxy switches reached, restarting main process...")
+                    return None  # Mengembalikan None untuk menghentikan loop utama
 
         self.log(f"{merah}Max retries reached, moving to the next process.")
         return None
@@ -938,6 +938,7 @@ class BlumTod:
                 self.save_state()
                 self.log(f"{hijau}All accounts processed. Restarting...")
 
+                # Logika restart ketika proxy sudah gagal diganti 3 kali
                 if self.next_restart_time is not None:
                     formatted_end_time = self.next_restart_time.strftime("%Y-%m-%d %H:%M:%S %Z%z")
                     print(f"{kuning}Waiting until {formatted_end_time} before restarting...", flush=True)
