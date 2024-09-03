@@ -91,6 +91,12 @@ class BlumTod:
         self.use_proxy = False
         self.proxies = []
 
+    def restart_bot(self):
+        self.log("Restarting the bot...")
+        self.save_state()
+        os.execl(sys.executable, sys.executable, *sys.argv)  # Restart bot dengan menjalankan ulang script
+
+
     def stop(self):
         self.running = False
         self.log(f"Stopping the bot...")
@@ -717,8 +723,7 @@ class BlumTod:
 
                 if retry_counter >= max_looping_errors:
                     self.log(f"{merah}Max looping errors reached. Restarting bot...")
-                    self.save_state()
-                    os.execl(sys.executable, sys.executable, *sys.argv)
+                    self.restart_bot()  # Panggil fungsi restart bot alih-alih menghentikan bot
 
                 if retry_count >= max_retries:
                     self.log(f"{kuning}Switching proxy...")
