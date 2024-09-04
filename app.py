@@ -157,19 +157,24 @@ def start_bot():
 
     if bot_name not in bot_threads or not bot_threads[bot_name].is_alive():
         bot_instance = bot_instances[bot_name]
-        bot_thread = threading.Thread(target=run_bot, args=(bot_instance,))
-        bot_thread.start()
+        if not bot_instance.running:  # Pastikan bot belum berjalan
+            bot_instance.running = True  # Atur bot untuk berjalan
+            bot_thread = threading.Thread(target=run_bot, args=(bot_instance,))
+            bot_thread.start()
 
-        # Simpan bot instance dan thread ke dalam dictionary
-        bot_threads[bot_name] = bot_thread
+            # Simpan bot instance dan thread ke dalam dictionary
+            bot_threads[bot_name] = bot_thread
 
-        logger.info(f"Bot '{bot_name}' started.")
-        trim_log_file()
-        return jsonify({'status': f"Bot '{bot_name}' started"})
+            logger.info(f"Bot '{bot_name}' started.")
+            trim_log_file()
+            return jsonify({'status': f"Bot '{bot_name}' started"})
+        else:
+            return jsonify({'status': 'failed', 'message': f'Bot {bot_name} is already running'}), 400
     else:
         logger.info(f"Attempted to start bot '{bot_name}', but it's already running.")
         trim_log_file()
         return jsonify({'status': f"Bot '{bot_name}' is already running"})
+
 
 @app.route('/stop_bot', methods=['POST'])
 def stop_bot():
@@ -181,6 +186,7 @@ def stop_bot():
         logger.info(f"Bot '{bot_name}' stopped.")
         
         # Hapus bot instance dan thread dari dictionary setelah dihentikan
+        bot_instances[bot_name] = BlumTod(bot_name=bot_name)  # Re-inisialisasi bot setelah stop
         del bot_threads[bot_name]
 
         trim_log_file()
@@ -429,7 +435,6 @@ def bot_count():
     running_bots = len([bot for bot in bot_threads.values() if bot.is_alive()])  # Menghitung bot yang sedang berjalan
     return jsonify({'running_bots': running_bots})
 
-# Endpoint untuk memulai semua bot
 @app.route('/start_all_bots', methods=['POST'])
 def start_all_bots():
     for bot_name, bot_instance in bot_instances.items():
@@ -438,9 +443,14 @@ def start_all_bots():
             bot_thread.start()
             bot_threads[bot_name] = bot_thread
             logger.info(f"Bot '{bot_name}' started.")
+            
+            # Jeda 2 detik sebelum memulai bot berikutnya
+            time.sleep(2)
         else:
             logger.info(f"Bot '{bot_name}' is already running.")
+    
     return jsonify({'status': 'All bots started'})
+
 
 # Endpoint untuk menghentikan semua bot
 @app.route('/stop_all_bots', methods=['POST'])

@@ -58,10 +58,9 @@ def run_bot_instance(bot_name):
             continue  # Lanjutkan eksekusi bot
 
 def stop(self):
-    """Menghentikan bot dengan mengirimkan sinyal SIGINT, seperti menekan Ctrl+C."""
-    self.log(f"Stopping the bot...")
     self.running = False
-    os.kill(os.getpid(), signal.SIGINT)
+    self.log(f"Stopping the bot...")
+    self.log(f"Bot stopped")
 
 def is_connected(hostname="8.8.8.8", port=53, timeout=3):
     """Fungsi untuk memeriksa apakah ada koneksi internet"""
@@ -117,14 +116,12 @@ class BlumTod:
         self.user_agents = load_user_agents()
         self.use_proxy = False
         self.proxies = []
-
+        
     def restart_bot(self):
         self.log("Restarting the bot...")
-        self.save_state()
-       # self.main()  # Panggil ulang fungsi main
-        self.running = True
-        self.main() 
-       # os.execl(sys.executable, sys.executable, *sys.argv)  # Restart bot dengan menjalankan ulang script
+        self.save_state()  # Save state sebelum restart
+        self.running = True  # Reset flag
+        self.main()  # Restart loop utama
 
 
     def stop(self):
