@@ -5,19 +5,17 @@ import threading
 import os
 import json
 import time
-from urllib.parse import parse_qs, unquote
+from datetime import datetime
 import re
-from datetime import datetime, timedelta
-
 from bot import BlumTod
+import portalocker
 
 # Setup Flask and logging
 app = Flask(__name__)
-
-# Variabel global untuk menyimpan bot instance, thread, dan waktu restart berikutnya
-bot_thread = None
-bot_instance = None
-next_restart_time = None  # Variabel untuk menyimpan waktu restart berikutnya
+bot_instances = {}  # Menyimpan instance bot
+bot_threads = {}    # Menyimpan thread bot
+bot_json_file = 'bot.json'
+bot_state_file = 'bot_state.json'
 
 logger = logging.getLogger('werkzeug')
 logger.setLevel(logging.INFO)
@@ -36,6 +34,44 @@ console_handler.setFormatter(console_formatter)
 logger.addHandler(rotating_handler)
 logger.addHandler(console_handler)
 
+
+# Load bots from bot.json with locking
+def load_bots():
+    if os.path.exists(bot_json_file):
+        for attempt in range(5):  # Retry mechanism
+            try:
+                with open(bot_json_file, 'r', encoding='utf-8') as f:
+                    portalocker.lock(f, portalocker.LOCK_SH)  # Shared lock for reading
+                    bot_names = json.load(f)
+                    portalocker.unlock(f)
+                break
+            except portalocker.LockException:
+                logger.warning(f"Could not acquire lock for {bot_json_file}, retrying...")
+                time.sleep(2)  # Retry after delay
+        else:
+            logger.error(f"Failed to load {bot_json_file} after 5 attempts.")
+            return []
+
+        for bot_name in bot_names:
+            bot_instances[bot_name] = BlumTod(bot_name=bot_name)  # Inisialisasi bot instance
+        return bot_names
+    return []
+
+# Save bots to bot.json with locking
+def save_bots():
+    for attempt in range(5):  # Retry mechanism
+        try:
+            with open(bot_json_file, 'w', encoding='utf-8') as f:
+                portalocker.lock(f, portalocker.LOCK_EX)  # Exclusive lock for writing
+                json.dump(list(bot_instances.keys()), f, indent=4)
+                portalocker.unlock(f)
+            break
+        except portalocker.LockException:
+            logger.warning(f"Could not acquire lock for {bot_json_file}, retrying...")
+            time.sleep(2)  # Retry after delay
+    else:
+        logger.error(f"Failed to save {bot_json_file} after 5 attempts.")
+
 # Function to trim the log file to the last 100 lines
 def trim_log_file():
     with open(log_file, 'r') as f:
@@ -45,50 +81,190 @@ def trim_log_file():
         with open(log_file, 'w') as f:
             f.writelines(lines[-100:])
 
-# Function to log messages
 def log_message(message):
     logger.info(message)
 
-# Variabel global untuk menyimpan next_restart_time
-next_restart_time = None
+# Fungsi untuk menjalankan bot
+def run_bot(bot_instance):
+    logger.info("Running the bot instance.")
+    bot_instance.load_config()
+    bot_instance.main()
+    trim_log_file()
 
-# Fungsi untuk memuat next_restart_time dari bot_state.json
-def load_next_restart_time():
-    global next_restart_time
+@app.route('/')
+def index():
+    logger.info("Accessing the index page.")
+    trim_log_file()
+    return render_template('index.html')
+
+
+@app.route('/create_bot', methods=['POST'])
+def create_bot():
+    bot_name = request.json.get('bot_name')  # Ambil nama bot dari request
+
+    if not bot_name:
+        return jsonify({'status': 'failed', 'message': 'Bot name is required'}), 400
+
+    if bot_name in bot_instances:
+        return jsonify({'status': 'failed', 'message': f'Bot {bot_name} already exists'}), 400
+
+    # Inisialisasi bot baru tanpa menjalankannya
+    bot_instance = BlumTod(bot_name=bot_name)
+    bot_instances[bot_name] = bot_instance
+
+    # Simpan informasi bot ke bot.json
+    save_bots()  # Make sure this is called correctly
+
+    logger.info(f"Bot '{bot_name}' created (not started).")
+    return jsonify({'status': 'success', 'message': f'Bot {bot_name} created (not started)'})
+### Menghapus Bot yang Dipilih
+@app.route('/delete_bot', methods=['POST'])
+def delete_bot():
+    bot_name = request.json.get('bot_name')
+
+    if not bot_name or bot_name not in bot_instances:
+        return jsonify({'status': 'failed', 'message': 'Bot not found or invalid name'}), 400
+
+    # Stop the bot if running
+    if bot_name in bot_threads and bot_threads[bot_name].is_alive():
+        bot_instances[bot_name].stop()
+        bot_threads[bot_name].join()
+
+    # Remove bot from the dictionaries
+    del bot_instances[bot_name]
+    del bot_threads[bot_name]
+
+    # Update the bot.json file
+    save_bots()
+
+    logger.info(f"Bot '{bot_name}' deleted.")
+    return jsonify({'status': 'success', 'message': f'Bot {bot_name} has been deleted'})
+
+### Menampilkan Daftar Bot yang Sedang Berjalan
+@app.route('/bot_list', methods=['GET'])
+def bot_list():
+    bot_list = list(bot_instances.keys())  # Mengambil nama bot dari bot_instances, bukan bot_threads
+    logger.info(f"Current bots: {bot_list}")  # Logging untuk melihat daftar bot
+    return jsonify({'bots': bot_list})
+
+
+@app.route('/start_bot', methods=['POST'])
+def start_bot():
+    bot_name = request.json.get('bot_name', 'DefaultBot')  # Ambil nama bot dari request POST
+
+    if bot_name not in bot_instances:
+        return jsonify({'status': 'failed', 'message': 'Bot does not exist. Please create a bot first.'}), 400
+
+    if bot_name not in bot_threads or not bot_threads[bot_name].is_alive():
+        bot_instance = bot_instances[bot_name]
+        bot_thread = threading.Thread(target=run_bot, args=(bot_instance,))
+        bot_thread.start()
+
+        # Simpan bot instance dan thread ke dalam dictionary
+        bot_threads[bot_name] = bot_thread
+
+        logger.info(f"Bot '{bot_name}' started.")
+        trim_log_file()
+        return jsonify({'status': f"Bot '{bot_name}' started"})
+    else:
+        logger.info(f"Attempted to start bot '{bot_name}', but it's already running.")
+        trim_log_file()
+        return jsonify({'status': f"Bot '{bot_name}' is already running"})
+
+@app.route('/stop_bot', methods=['POST'])
+def stop_bot():
+    bot_name = request.json.get('bot_name', 'DefaultBot')  # Ambil nama bot dari request
+
+    if bot_name in bot_instances and bot_threads[bot_name].is_alive():
+        bot_instances[bot_name].stop()  # Panggil fungsi stop pada bot yang sesuai
+        bot_threads[bot_name].join()  # Tunggu hingga thread selesai
+        logger.info(f"Bot '{bot_name}' stopped.")
+        
+        # Hapus bot instance dan thread dari dictionary setelah dihentikan
+        del bot_threads[bot_name]
+
+        trim_log_file()
+        return jsonify({'status': f"Bot '{bot_name}' stopped"})
+    else:
+        logger.info(f"Attempted to stop bot '{bot_name}', but it was not running.")
+        trim_log_file()
+        return jsonify({'status': f"Bot '{bot_name}' is not running"})
+
+@app.route('/status', methods=['GET'])
+def status():
+    bot_name = request.args.get('bot_name', 'DefaultBot')  # Ambil nama bot dari parameter URL
+
+    if bot_name in bot_threads and bot_threads[bot_name].is_alive():
+        running = True
+    else:
+        running = False
+    
+    logger.info(f"Checking status of bot '{bot_name}': {'running' if running else 'stopped'}.")
+    trim_log_file()
+    return jsonify({'bot_name': bot_name, 'running': running})
+
+
+# Fungsi untuk membaca log HTTP berdasarkan bot
+@app.route('/logs', methods=['GET'])
+def get_logs():
+    bot_name = request.args.get('bot_name', 'DefaultBot')  # Ambil nama bot dari parameter URL
+    logs = {}
+
+    # Path log file HTTP untuk setiap bot
+    bot_log_path = f'bot_{bot_name}.log'  # Path log file sesuai nama bot
+    http_log_path = f'http_{bot_name}.log'  # Path log HTTP sesuai nama bot
+
+    # Baca log bot yang dipilih
+    if os.path.exists(bot_log_path):
+        with open(bot_log_path, 'r', encoding='utf-8', errors='replace') as f:
+            logs['bot_log'] = format_logs(f.readlines())
+        logger.info(f"Read {bot_log_path}: {len(logs['bot_log'])} lines.")
+    else:
+        logs['bot_log'] = ["bot.log file not found."]
+        logger.warning(f"{bot_log_path} file not found.")
+
+    # Baca log HTTP untuk bot yang dipilih
+    if os.path.exists(http_log_path):
+        with open(http_log_path, 'r', encoding='utf-8', errors='replace') as f:
+            logs['http_log'] = format_logs(f.readlines())
+        logger.info(f"Read {http_log_path}: {len(logs['http_log'])} lines.")
+    else:
+        logs['http_log'] = ["http.log file not found."]
+        logger.warning(f"{http_log_path} file not found.")
+
+    return jsonify(logs)
+
+
+@app.route('/bot_info', methods=['GET'])
+def get_bot_info():
     try:
-        with open('bot_state.json', 'r', encoding='utf-8') as f:
-            state = json.load(f)
-            next_restart_time_str = state.get('next_restart_time', None)
-            if next_restart_time_str:
-                next_restart_time = datetime.fromisoformat(next_restart_time_str)
-            else:
-                next_restart_time = None
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        next_restart_time = None
-        logger.error(f"Error loading next_restart_time from bot_state.json: {str(e)}")
+        # Membaca informasi dari bot_state.json
+        with open(bot_state_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
 
-@app.route('/next_restart')
-def next_restart():
-    global next_restart_time
-    load_next_restart_time()  # Hanya membaca nilai terbaru tanpa memodifikasi
-    if next_restart_time:
-        return jsonify({'next_restart_time': next_restart_time.strftime('%Y-%m-%d %H:%M:%S')})
-    else:
-        return jsonify({'next_restart_time': 'N/A'})
+        processed_accounts = data.get('processed_accounts', [])
+        first_account_time = data.get('first_account_time', 'Not Available')
+        next_restart_time = data.get('next_restart_time', 'Not Available')
 
-# Function to save the state of processing (e.g., token or balance)
-def save_state_callback(userid, data):
-    tokens_file = 'tokens.json'
-    if os.path.exists(tokens_file):
-        with open(tokens_file, 'r', encoding='utf-8') as f:
-            tokens = json.load(f)
-    else:
-        tokens = {}
+        # Mengirimkan informasi sebagai JSON
+        return jsonify({
+            'processed_accounts': processed_accounts,
+            'first_account_time': first_account_time,
+            'next_restart_time': next_restart_time
+        })
+    
+    except FileNotFoundError:
+        return jsonify({
+            'error': 'bot_state.json not found',
+            'processed_accounts': [],
+            'first_account_time': None,
+            'next_restart_time': None
+        }), 404
 
-    tokens[str(userid)] = data
+    except Exception as e:
+        logger.error(f"Error while loading bot_state.json: {str(e)}")
+        return jsonify({'error': 'An error occurred while reading bot_state.json'}), 500
 
-    with open(tokens_file, 'w', encoding='utf-8') as f:
-        json.dump(tokens, f, indent=4)
 
 # Function to remove empty lines from a file
 def remove_empty_lines(file_path):
@@ -106,102 +282,13 @@ def remove_empty_lines(file_path):
 
     logger.info(f"Removed empty lines from {file_path}.")
 
-# Clean files at the start
-def clean_all_files():
-    logger.info("Cleaning all files at the start.")
-    remove_empty_lines('data.txt')
-    remove_empty_lines('user-agent.txt')
-    remove_empty_lines('proxies.txt')
-    remove_empty_lines('config.json')
-
-# Function to be called after editing files
 def post_edit_cleanup(file_path):
-    logger.info(f"Cleaning up after editing {file_path}.")
     remove_empty_lines(file_path)
 
-@app.route('/')
-def index():
-    logger.info("Accessing the index page.")
-    trim_log_file()
-    return render_template('index.html')
-
-@app.route('/start_bot', methods=['POST'])
-def start_bot():
-    global bot_thread, bot_instance
-
-    if bot_thread is None or not bot_thread.is_alive():
-        bot_instance = BlumTod()  # Inisialisasi instance bot
-        bot_thread = threading.Thread(target=run_bot, args=(bot_instance,))
-        bot_thread.start()
-
-        logger.info("Bot started.")
-        trim_log_file()
-        return jsonify({'status': 'Bot started'})
-    else:
-        logger.info("Attempted to start bot, but it's already running.")
-        trim_log_file()
-        return jsonify({'status': 'Bot is already running'})
-
-@app.route('/stop_bot', methods=['POST'])
-def stop_bot():
-    global bot_thread, bot_instance
-
-    if bot_instance is not None:
-        bot_instance.stop()  # Panggil fungsi stop yang baru
-        bot_thread.join()  # Tunggu hingga thread selesai
-        logger.info("Bot stopped.")
-        bot_instance = None
-        bot_thread = None
-        trim_log_file()
-        return jsonify({'status': 'Bot stopped'})
-    else:
-        logger.info("Attempted to stop bot, but it was not running.")
-        trim_log_file()
-        return jsonify({'status': 'Bot is not running'})
-
-
-@app.route('/status')
-def status():
-    global bot_thread
-    running = bot_thread is not None and bot_thread.is_alive()
-    logger.info(f"Checking bot status: {'running' if running else 'stopped'}.")
-    trim_log_file()
-    return jsonify({'running': running})
-
-@app.route('/logs')
-def get_logs():
-    logs = {}
-
-    # Ensure bot.log exists
-    bot_log_path = os.path.join(os.path.dirname(__file__), 'bot.log')
-    if not os.path.exists(bot_log_path):
-        with open(bot_log_path, 'w', encoding='utf-8') as f:
-            f.write('')
-
-    try:
-        with open(bot_log_path, 'r', encoding='utf-8', errors='replace') as f:
-            logs['bot_log'] = format_logs(f.readlines())
-        logger.info(f"Read bot.log: {len(logs['bot_log'])} lines.")
-    except FileNotFoundError:
-        logs['bot_log'] = ["bot.log file not found."]
-        logger.warning("bot.log file not found.")
-
-    # Ensure http.log exists
-    http_log_path = os.path.join(os.path.dirname(__file__), 'http.log')
-    if not os.path.exists(http_log_path):
-        with open(http_log_path, 'w', encoding='utf-8') as f:
-            f.write('')
-
-    try:
-        with open(http_log_path, 'r', encoding='utf-8', errors='replace') as f:
-            logs['http_log'] = format_logs(f.readlines())
-        logger.info(f"Read http.log: {len(logs['http_log'])} lines.")
-    except FileNotFoundError:
-        logs['http_log'] = ["http.log file not found."]
-        logger.warning("http.log file not found.")
-
-    trim_log_file()
-    return jsonify(logs)
+def clean_all_files():
+    files_to_clean = ['data.txt', 'user-agent.txt', 'proxies.txt', 'config.json']
+    for file in files_to_clean:
+        remove_empty_lines(file)
 
 def format_logs(log_lines):
     """Convert log lines to formatted HTML."""
@@ -306,14 +393,16 @@ def edit_config_file():
             return render_template('edit_config.html', config={})
 
 
-@app.route('/total_balance')
+@app.route('/total_balance', methods=['GET'])
 def total_balance():
     balances_file = 'balances.json'
-    
+
+    # Cek apakah file balances.json ada
     if os.path.exists(balances_file):
-        remove_empty_lines(balances_file)  # Clean up balances file before reading
+        remove_empty_lines(balances_file)  # Bersihkan balances file sebelum membaca
         with open(balances_file, 'r', encoding='utf-8') as f:
             balances = json.load(f)
+
         try:
             total_balance = 0.0
             for user_id, balance in balances.items():
@@ -323,9 +412,10 @@ def total_balance():
                 except ValueError:
                     logger.error(f"Invalid balance value for user {user_id}: {balance}")
                     return jsonify({'error': f'Invalid balance value for user {user_id} in balances.json'}), 500
-            
+
             logger.info(f"Total balance calculated: {total_balance}")
             return jsonify({'total_balance': total_balance})
+
         except ValueError as e:
             logger.error(f"Error calculating total balance: {str(e)}")
             return jsonify({'error': 'Invalid balance value in balances.json'}), 500
@@ -333,55 +423,132 @@ def total_balance():
         logger.warning("balances.json file not found.")
         return jsonify({'total_balance': 0})
 
+
+@app.route('/bot_count', methods=['GET'])
+def bot_count():
+    running_bots = len([bot for bot in bot_threads.values() if bot.is_alive()])  # Menghitung bot yang sedang berjalan
+    return jsonify({'running_bots': running_bots})
+
+# Endpoint untuk memulai semua bot
+@app.route('/start_all_bots', methods=['POST'])
+def start_all_bots():
+    for bot_name, bot_instance in bot_instances.items():
+        if bot_name not in bot_threads or not bot_threads[bot_name].is_alive():
+            bot_thread = threading.Thread(target=run_bot, args=(bot_instance,))
+            bot_thread.start()
+            bot_threads[bot_name] = bot_thread
+            logger.info(f"Bot '{bot_name}' started.")
+        else:
+            logger.info(f"Bot '{bot_name}' is already running.")
+    return jsonify({'status': 'All bots started'})
+
+# Endpoint untuk menghentikan semua bot
+@app.route('/stop_all_bots', methods=['POST'])
+def stop_all_bots():
+    for bot_name, bot_thread in bot_threads.items():
+        if bot_thread.is_alive():
+            bot_instances[bot_name].stop()
+            bot_thread.join()
+            logger.info(f"Bot '{bot_name}' stopped.")
+    # Hapus semua thread dari dictionary setelah dihentikan
+    bot_threads.clear()
+    return jsonify({'status': 'All bots stopped'})
+
+# Endpoint untuk mendapatkan IP bot
+@app.route('/get_bot_ip', methods=['GET'])
+def get_bot_ip():
+    bot_name = request.args.get('bot_name')
+    
+    if not bot_name or bot_name not in bot_instances:
+        return jsonify({'status': 'failed', 'message': 'Bot not found'}), 404
+    
+    bot_instance = bot_instances[bot_name]
+    bot_ip = bot_instance.get_ip()  # Pastikan Anda memiliki fungsi get_ip di BlumTod
+    
+    return jsonify({'bot_name': bot_name, 'ip': bot_ip})
+
+# Endpoint untuk mendapatkan akun yang sedang diproses oleh bot
+@app.route('/get_processing_account', methods=['GET'])
+def get_processing_account():
+    bot_name = request.args.get('bot_name')
+    
+    if not bot_name or bot_name not in bot_instances:
+        return jsonify({'status': 'failed', 'message': 'Bot not found'}), 404
+    
+    bot_instance = bot_instances[bot_name]
+    processing_account = bot_instance.get_current_account()  # Pastikan Anda memiliki fungsi get_current_account di BlumTod
+    
+    return jsonify({'bot_name': bot_name, 'processing_account': processing_account})
+
+
+# Modifikasi metode reset bot untuk menggunakan retry mechanism yang sama
 @app.route('/reset_bot', methods=['POST'])
 def reset_bot():
-    global bot_thread, bot_instance
+    # Cek apakah ada bot yang sedang berjalan
+    if any(bot_thread.is_alive() for bot_thread in bot_threads.values()):
+        return jsonify({'status': 'failed', 'message': 'Cannot reset. Stop all bots first.'}), 400
 
-    # Cek apakah bot sedang berjalan
-    if bot_thread is not None and bot_thread.is_alive():
-        logger.warning("Attempted to reset bot while it is running. Please stop the bot first.")
-        return jsonify({'status': 'failed', 'message': 'Please stop the bot first'}), 400
-
-    # Reset bot_state.json
-    bot_state_file = 'bot_state.json'
-    if os.path.exists(bot_state_file):
-        with open(bot_state_file, 'w', encoding='utf-8') as f:
-            json.dump({}, f)
-        logger.info("Bot state reset successfully.")
+    # Reset semua log file dan bot_state.json dengan penguncian
+    for attempt in range(5):  # Retry mechanism untuk penguncian
+        try:
+            with open(bot_state_file, 'w', encoding='utf-8') as f:
+                portalocker.lock(f, portalocker.LOCK_EX)  # Penguncian eksklusif
+                json.dump({}, f, indent=4)  # Reset bot_state.json
+                portalocker.unlock(f)
+            logger.info(f"{bot_state_file} reset successfully.")
+            break
+        except portalocker.LockException:
+            logger.warning(f"Attempt {attempt + 1}: Could not acquire lock for {bot_state_file}, retrying...")
+            time.sleep(2)  # Coba ulang setelah jeda waktu
     else:
-        logger.warning(f"{bot_state_file} not found. No action taken.")
-        
-    # Reset tokens.json
-    tokens_file = 'tokens.json'
-    if os.path.exists(tokens_file):
-        with open(tokens_file, 'w', encoding='utf-8') as f:
-            json.dump({}, f)
-        logger.info("Tokens reset successfully.")
-    else:
-        logger.warning(f"{tokens_file} not found. No action taken.")
+        # Jika gagal setelah 5 kali percobaan
+        logger.error(f"Failed to reset {bot_state_file} after 5 attempts.")
+        return jsonify({'status': 'failed', 'message': f'Failed to reset {bot_state_file}'}), 500
 
-    return jsonify({'status': 'success', 'message': 'Bot state and tokens have been reset'})
+    # Reset log file untuk setiap bot
+    for bot_name in bot_instances.keys():
+        bot_log_file = f'bot_{bot_name}.log'
+        http_log_file = f'http_{bot_name}.log'
+
+        if os.path.exists(bot_log_file):
+            open(bot_log_file, 'w').close()  # Mengosongkan log file
+            logger.info(f"Log file {bot_log_file} reset.")
+
+        if os.path.exists(http_log_file):
+            open(http_log_file, 'w').close()  # Mengosongkan HTTP log file
+            logger.info(f"HTTP log file {http_log_file} reset.")
+
+    logger.info("All bot states and log files have been reset.")
+    return jsonify({'status': 'success', 'message': 'All bot states and log files have been reset.'})
 
 @app.route('/refresh_balance', methods=['POST'])
 def refresh_balance():
-    global bot_thread, bot_instance
+    balances_file = 'balances.json'  # Menggunakan balances.json umum untuk semua bot
 
-    # Cek apakah bot sedang berjalan
-    if bot_thread is not None and bot_thread.is_alive():
-        logger.warning("Attempted to refresh balance while the bot is running. Please stop the bot first.")
-        return jsonify({'status': 'failed', 'message': 'Please stop the bot first'}), 400
+    # Cek apakah ada bot yang sedang berjalan
+    if any(bot_thread.is_alive() for bot_thread in bot_threads.values()):
+        return jsonify({'status': 'failed', 'message': 'Cannot refresh balance while bots are running. Stop all bots first.'}), 400
 
-    # Reset balances.json
-    balances_file = 'balances.json'
-    if os.path.exists(balances_file):
-        with open(balances_file, 'w', encoding='utf-8') as f:
-            json.dump({}, f)
-        logger.info("Balances reset successfully.")
+    # Lakukan penguncian dan reset balances.json
+    for attempt in range(5):  # Retry mechanism untuk penguncian
+        try:
+            with open(balances_file, 'w', encoding='utf-8') as f:
+                portalocker.lock(f, portalocker.LOCK_EX)  # Penguncian eksklusif
+                json.dump({}, f, indent=4)  # Reset isi balances.json
+                portalocker.unlock(f)
+            logger.info(f"Balances file {balances_file} reset successfully.")
+            break  # Jika sukses, keluar dari loop
+        except portalocker.LockException:
+            logger.warning(f"Attempt {attempt + 1}: Could not acquire lock for {balances_file}, retrying...")
+            time.sleep(2)  # Coba ulang setelah jeda waktu
     else:
-        logger.warning(f"{balances_file} not found. No action taken.")
+        # Jika gagal setelah 5 kali percobaan
+        logger.error(f"Failed to reset balances after 5 attempts.")
+        return jsonify({'status': 'failed', 'message': 'Failed to reset balances after multiple attempts.'}), 500
+ 
+    return jsonify({'status': 'success', 'message': 'Balances have been reset successfully'})
 
-    return jsonify({'status': 'success', 'message': 'Balances have been reset'})
-
+ 
 def run_bot(bot_instance):
     logger.info("Running the bot instance.")
     bot_instance.load_config()
@@ -415,6 +582,11 @@ if __name__ == '__main__':
     # Ensure log files exist at the start
     open('bot.log', 'a').close()
     open('http.log', 'a').close()
+
+    # Load bots from bot.json before starting the app
+    bots = load_bots()
+    for bot_name in bots:
+        bot_instances[bot_name] = BlumTod(bot_name=bot_name)  # Bot tersedia tetapi tidak dimulai
 
     # Clean all files before starting the app
     clean_all_files()

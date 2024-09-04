@@ -11,3 +11,5 @@ app.log
 cookies
 __pycache__
 auth_failed.json
+*.log
+bot.json

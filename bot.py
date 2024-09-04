@@ -14,6 +14,8 @@ import pytz
 import re
 import signal
 import socket
+import multiprocessing
+import portalocker
 
 init(autoreset=True)
 
@@ -42,6 +44,18 @@ for file_path in required_files:
     else:
         print(f"{file_path} already exists.")
 
+def run_bot_instance(bot_name):
+    app = BlumTod()  # Inisialisasi bot
+    app.load_config()  # Muat konfigurasi
+    print(f"Bot instance {bot_name} started")
+    
+    while app.running:
+        try:
+            app.main()  # Jalankan loop utama bot
+        except Exception as e:
+            print(f"Error in bot instance {bot_name}: {str(e)}")
+            time.sleep(5)  # Coba lagi setelah 5 detik
+            continue  # Lanjutkan eksekusi bot
 
 def stop(self):
     """Menghentikan bot dengan mengirimkan sinyal SIGINT, seperti menekan Ctrl+C."""
@@ -76,7 +90,9 @@ def random_delay(min_delay=2, max_delay=5):
     time.sleep(delay)
 
 class BlumTod:
-    def __init__(self):
+    def __init__(self, bot_name="DefaultBot"):
+        self.bot_name = bot_name  # Nama bot
+        self.log_file = f"bot_{bot_name}.log"
         self.running = True
         self.stop_requested = False
         self.restart_requested = False
@@ -116,15 +132,50 @@ class BlumTod:
         self.log(f"Stopping the bot...")
         self.log(f"Bot stopped")
 
-    def save_state(self):
-        """Menyimpan status akun yang sudah diproses ke file"""
-        state = {
-            "processed_accounts": list(self.processed_accounts),
-            "first_account_time": self.first_account_time.isoformat() if self.first_account_time else None,
-            "next_restart_time": self.next_restart_time.isoformat() if self.next_restart_time else None
-        }
-        with open(self.state_file, 'w', encoding='utf-8') as f:
-            json.dump(state, f)
+    def save_state(self, retries=5, delay=10):
+        """Menyimpan status akun yang sudah diproses ke file, dengan retry dan locking, tanpa menimpa data."""
+        attempt = 0
+        while attempt < retries:
+            try:
+                # Membuka file dengan mode baca untuk menggabungkan data existing
+                if os.path.exists(self.state_file):
+                    with open(self.state_file, 'r', encoding='utf-8') as f:
+                        portalocker.lock(f, portalocker.LOCK_SH)  # Shared lock untuk membaca
+                        existing_state = json.load(f)  # Muat state yang ada
+                        portalocker.unlock(f)
+
+                    # Gabungkan 'processed_accounts' yang sudah ada dengan yang baru
+                    existing_processed_accounts = set(existing_state.get("processed_accounts", []))
+                    combined_processed_accounts = existing_processed_accounts.union(self.processed_accounts)
+
+                else:
+                    # Jika file tidak ada, mulai dari awal
+                    combined_processed_accounts = self.processed_accounts
+
+                # Buat state baru dengan akun yang sudah diproses digabung
+                state = {
+                    "processed_accounts": list(combined_processed_accounts),
+                    "first_account_time": self.first_account_time.isoformat() if self.first_account_time else None,
+                    "next_restart_time": self.next_restart_time.isoformat() if self.next_restart_time else None
+                }
+
+                # Membuka file dengan mode eksklusif untuk menulis
+                with open(self.state_file, 'w', encoding='utf-8') as f:
+                    portalocker.lock(f, portalocker.LOCK_EX)  # Mengunci file secara eksklusif
+                    json.dump(state, f, indent=4)  # Simpan state
+                    portalocker.unlock(f)  # Lepaskan penguncian
+
+                self.log(f"State saved successfully to {self.state_file}.")
+                return
+            except portalocker.LockException as e:
+                self.log(f"Error: Could not acquire lock for {self.state_file}. Exception: {str(e)} Retrying in {delay} seconds...")
+                time.sleep(delay)
+                attempt += 1
+            except Exception as e:
+                self.log(f"Unexpected error occurred: {str(e)}")
+                return
+
+        self.log(f"Failed to acquire lock for {self.state_file} after {retries} retries.")
 
     def request_stop(self):
         """Mengatur flag untuk menghentikan bot segera."""
@@ -138,22 +189,35 @@ class BlumTod:
             self.log("Stopping the bot immediately.")
             sys.exit(0)
 
-    def load_state(self):
-        """Memuat status akun yang sudah diproses dari file"""
+    def load_state(self, retries=5, delay=10):
+        """Memuat status akun yang sudah diproses dari file, dengan retry dan locking."""
         if os.path.exists(self.state_file):
-            with open(self.state_file, 'r', encoding='utf-8') as f:
-                state = json.load(f)
-                self.processed_accounts = set(state.get("processed_accounts", []))
+            for attempt in range(retries):  # Gunakan 'attempt' untuk retry
+                try:
+                    with open(self.state_file, 'r', encoding='utf-8') as f:
+                        portalocker.lock(f, portalocker.LOCK_SH)  # Shared lock untuk membaca
+                        state = json.load(f)
+                        portalocker.unlock(f)  # Lepaskan kunci setelah selesai
 
-                first_account_time_str = state.get("first_account_time", None)
-                if first_account_time_str:
-                    self.first_account_time = datetime.fromisoformat(first_account_time_str).astimezone(WIB)
+                    self.processed_accounts = set(state.get("processed_accounts", []))
 
-                next_restart_time_str = state.get("next_restart_time", None)
-                if next_restart_time_str:
-                    self.next_restart_time = datetime.fromisoformat(next_restart_time_str).astimezone(WIB)
+                    first_account_time_str = state.get("first_account_time", None)
+                    if first_account_time_str:
+                        self.first_account_time = datetime.fromisoformat(first_account_time_str).astimezone(WIB)
+
+                    next_restart_time_str = state.get("next_restart_time", None)
+                    if next_restart_time_str:
+                        self.next_restart_time = datetime.fromisoformat(next_restart_time_str).astimezone(WIB)
+
+                    self.log(f"State loaded successfully from {self.state_file}.")
+                    return  # Berhasil, keluar dari fungsi
+                except portalocker.LockException:
+                    self.log(f"Error: Could not acquire lock for {self.state_file} on attempt {attempt + 1}, retrying in {delay} seconds...")
+                    time.sleep(delay)  # Tunggu sebelum mencoba lagi
+
+            self.log(f"Failed to acquire lock for {self.state_file} after {retries} attempts.")
         else:
-            self.save_state()
+            self.save_state()  # Jika state file tidak ada, buat yang baru
 
     def get_user_agent_for_account(self, account_number):
         """Mengembalikan User-Agent yang sama untuk setiap akun"""
@@ -491,27 +555,29 @@ class BlumTod:
         return {k: v[0] for k, v in parse_qs(data).items()}
 
     def log(self, message):
+        """Log pesan dengan menambahkan waktu dan nama bot."""
         now = datetime.now(WIB).isoformat(" ").split(".")[0]
-        log_message = f"{now} {message}"
-        print(f"{hitam}[{now}]{reset} {message}")
-        clean_message = re.sub(r'\x1b\[[0-9;]*m', '', log_message)
-        with open("bot.log", "a", encoding="utf-8") as log_file:
+        log_message = f"{now} [{self.bot_name}] {message}"  # Tambahkan nama bot ke log
+        print(f"{Fore.LIGHTBLACK_EX}[{now}]{Style.RESET_ALL} {message}")
+        
+        # Simpan log ke file yang terpisah untuk setiap bot
+        clean_message = re.sub(r'\x1b\[[0-9;]*m', '', log_message)  # Hapus kode warna dari log
+        with open(self.log_file, "a", encoding="utf-8") as log_file:
             log_file.write(f"{clean_message}\n")
+
         self.trim_log_file()
 
     def trim_log_file(self):
-        """Trim the bot.log file to only keep the last 100 lines."""
-        log_file = "bot.log"
+        """Trim log file agar tidak terlalu besar, hanya menyimpan 100 baris terakhir."""
         try:
-            with open(log_file, 'r', encoding="utf-8", errors='replace') as file:
+            with open(self.log_file, 'r', encoding="utf-8") as file:
                 lines = file.readlines()
 
             if len(lines) > 100:
-                with open(log_file, 'w', encoding="utf-8") as file:
+                with open(self.log_file, 'w', encoding="utf-8") as file:
                     file.writelines(lines[-100:])
         except Exception as e:
-            print(f"Failed to trim log file: {str(e)}")
-            self.log(f"{merah}Failed to trim log file: {str(e)}")
+            self.log(f"{Fore.LIGHTRED_EX}Failed to trim log file: {str(e)}")
 
     def get_local_token(self, userid):
         if not os.path.exists("tokens.json"):
@@ -707,7 +773,7 @@ class BlumTod:
 
         while self.running:
             try:
-                logfile = "http.log"
+                logfile = f"http_{self.bot_name}.log"
                 if not os.path.exists(logfile):
                     open(logfile, "a", encoding="utf-8").close()
                 logsize = os.path.getsize(logfile)
@@ -726,7 +792,7 @@ class BlumTod:
                 else:
                     res = self.ses.post(url, headers=headers, data=data, timeout=30)
 
-                open("http.log", "a", encoding="utf-8").write(res.text + "\n")
+                open(f"http_{self.bot_name}.log", "a", encoding="utf-8").write(res.text + "\n")
                 if "<title>" in res.text:
                     self.log(f"{merah}Failed to fetch JSON response!")
                     time.sleep(2)

@@ -34,6 +34,10 @@
             background-color: #333333;
             color: #e0e0e0;
         }
+        .modal-dark {
+            background-color: #333333;
+            color: #e0e0e0;
+        }
         .loading-indicator {
             display: none;
             position: fixed;
@@ -79,23 +83,51 @@
     <div class="container mt-5">
         <h1 class="text-light-custom">Bot Control Interface</h1>
 
+        <div id="bot-count" class="alert alert-info">Number of running bots: Loading...</div>
+
+
+        <div id="total-balance" class="alert alert-secondary">Total Balance: Loading...</div>
+
+        <!-- First Account Time, Processed Accounts, Next Restart -->
+        <div id="first-account-time" class="alert alert-secondary">First Account Time: Loading...</div>
+        <div id="processed-accounts" class="alert alert-secondary">Processed Accounts: Loading...</div>
+        <div id="next-restart" class="alert alert-warning">Next Restart: N/A</div>
+
+        <!-- Tombol untuk mengontrol semua bot -->
+        <div class="mb-3 d-flex justify-content-start">
+            <button class="btn btn-success me-2" onclick="startAllBots()">Start All Bots</button>
+            <button class="btn btn-danger me-2" onclick="stopAllBots()">Stop All Bots</button>
+            <button class="btn btn-warning me-2" data-bs-toggle="modal" data-bs-target="#resetBotModal">Reset Bot</button>
+            <button class="btn btn-info me-2" data-bs-toggle="modal" data-bs-target="#refreshBalanceModal">Refresh Balance</button>
+            <button class="btn btn-success me-2" data-bs-toggle="modal" data-bs-target="#createBotModal">Create Bot</button>
+        </div>
+
+        <!-- Dropdown untuk memilih bot -->
+        <div class="mb-3">
+            <label for="botSelect" class="form-label">Select Bot</label>
+            <select class="form-select" id="botSelect" onchange="onBotChange()">
+                <!-- Option akan diisi melalui JavaScript -->
+            </select>
+        </div>
+
+        <!-- Tombol untuk mengontrol bot yang dipilih -->
         <div class="mb-3 d-flex justify-content-start">
             <button class="btn btn-primary-custom me-2" onclick="startBot()">Start Bot</button>
             <button class="btn btn-danger-custom me-2" onclick="stopBot()">Stop Bot</button>
-            <button class="btn btn-warning me-2" data-bs-toggle="modal" data-bs-target="#resetBotModal">Reset Bot</button>
-            <button class="btn btn-info" data-bs-toggle="modal" data-bs-target="#refreshBalanceModal">Refresh Balance</button>
+            <button class="btn btn-danger me-2" onclick="deleteBot()">Delete Bot</button>
         </div>
 
+        <!-- Informasi bot -->
         <div id="status" class="alert alert-info">
             Status: Loading...
         </div>
 
-        <div id="total-balance" class="alert alert-secondary">
-            Total Balance: Loading...
+        <div id="bot-ip" class="alert alert-info">
+            Bot IP: Loading...
         </div>
 
-        <div id="next-restart" class="alert alert-warning">
-            Next Restart: N/A
+        <div id="processing-account" class="alert alert-info">
+            Processing Account: Loading...
         </div>
 
         <div id="error-message" class="alert alert-danger d-none" role="alert">
@@ -118,10 +150,10 @@
     <!-- Modal untuk Reset Bot -->
     <div class="modal fade" id="resetBotModal" tabindex="-1" aria-labelledby="resetBotModalLabel" aria-hidden="true">
         <div class="modal-dialog">
-            <div class="modal-content">
+            <div class="modal-content modal-dark">
                 <div class="modal-header">
                     <h5 class="modal-title" id="resetBotModalLabel">Konfirmasi Reset Bot</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     Apakah Anda yakin ingin mereset bot?
@@ -137,10 +169,10 @@
     <!-- Modal untuk Refresh Balance -->
     <div class="modal fade" id="refreshBalanceModal" tabindex="-1" aria-labelledby="refreshBalanceModalLabel" aria-hidden="true">
         <div class="modal-dialog">
-            <div class="modal-content">
+            <div class="modal-content modal-dark">
                 <div class="modal-header">
                     <h5 class="modal-title" id="refreshBalanceModalLabel">Konfirmasi Refresh Balance</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     Apakah Anda yakin ingin mereset balance?
@@ -153,8 +185,32 @@
         </div>
     </div>
 
+    <!-- Modal untuk Create Bot -->
+    <div class="modal fade" id="createBotModal" tabindex="-1" aria-labelledby="createBotModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content modal-dark">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="createBotModalLabel">Create New Bot</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="botNameInput" class="form-label">Bot Name</label>
+                        <input type="text" class="form-control form-control-dark" id="botNameInput" placeholder="Enter bot name">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" onclick="createBot()">Create Bot</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        let currentBotName = 'DefaultBot';
+
         function showLoading() {
             document.getElementById('loading-indicator').style.display = 'flex';
         }
@@ -175,40 +231,133 @@
             errorMessage.classList.add('d-none');
         }
 
+        function onBotChange() {
+            const selectElement = document.getElementById('botSelect');
+            currentBotName = selectElement.value;
+            getStatus();
+            fetchBotInfo();
+            fetchBotIP();
+            fetchProcessingAccount();
+            fetchLogs();
+        }
+
         function startBot() {
             hideError();
             showLoading();
-            fetch('/start_bot', { method: 'POST' })
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('status').innerText = data.status;
-                    hideLoading();
-                })
-                .catch(error => {
-                    showError('Failed to start the bot.');
-                    hideLoading();
-                });
+            fetch('/start_bot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bot_name: currentBotName })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('status').innerText = data.status;
+                hideLoading();
+            })
+            .catch(error => {
+                showError('Failed to start the bot.');
+                hideLoading();
+            });
         }
 
         function stopBot() {
             hideError();
             showLoading();
-            fetch('/stop_bot', { method: 'POST' })
+            fetch('/stop_bot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bot_name: currentBotName })
+            })
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('status').innerText = data.status;
+                hideLoading();
+            })
+            .catch(error => {
+                showError('Failed to stop the bot.');
+                hideLoading();
+            });
+        }
+
+        function startAllBots() {
+            showLoading();
+            fetch('/start_all_bots', {
+                method: 'POST'
+            })
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById('status').innerText = data.status;
+                    document.getElementById('status').innerText = 'All bots started';
                     hideLoading();
                 })
                 .catch(error => {
-                    showError('Failed to stop the bot.');
+                    showError('Failed to start all bots.');
                     hideLoading();
                 });
+        }
+
+        function stopAllBots() {
+            showLoading();
+            fetch('/stop_all_bots', {
+                method: 'POST'
+            })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('status').innerText = 'All bots stopped';
+                    hideLoading();
+                })
+                .catch(error => {
+                    showError('Failed to stop all bots.');
+                    hideLoading();
+                });
+        }
+
+        function createBot() {
+            const botName = document.getElementById('botNameInput').value;
+            if (botName) {
+                showLoading();
+                fetch('/create_bot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bot_name: botName })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    loadBotList();  // Refresh the bot list
+                    hideLoading();
+                    document.getElementById('botNameInput').value = '';  // Clear input field
+                    var createBotModal = bootstrap.Modal.getInstance(document.getElementById('createBotModal'));
+                    createBotModal.hide();  // Close modal
+                })
+                .catch(error => {
+                    showError('Failed to create a new bot.');
+                    hideLoading();
+                });
+            }
+        }
+
+        function deleteBot() {
+            if (confirm(`Are you sure you want to delete the bot "${currentBotName}"?`)) {
+                fetch('/delete_bot', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ bot_name: currentBotName })
+                })
+                    .then(response => response.json())
+                    .then(data => {
+                        loadBotList();  // Refresh the bot list
+                    })
+                    .catch(error => showError('Failed to delete the bot.'));
+            }
         }
 
         function resetBot() {
             hideError();
             showLoading();
-            fetch('/reset_bot', { method: 'POST' })
+            fetch('/reset_bot', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bot_name: currentBotName })
+            })
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('status').innerText = data.message;
@@ -225,7 +374,11 @@
         function refreshBalance() {
             hideError();
             showLoading();
-            fetch('/refresh_balance', { method: 'POST' })
+            fetch('/refresh_balance', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bot_name: currentBotName })
+            })
                 .then(response => response.json())
                 .then(data => {
                     document.getElementById('status').innerText = data.message;
@@ -239,17 +392,18 @@
                 });
         }
 
+
         function getStatus() {
-            fetch('/status')
+            fetch(`/status?bot_name=${currentBotName}`)
                 .then(response => response.json())
                 .then(data => {
-                    document.getElementById('status').innerText = data.running ? 'Bot is running' : 'Bot is stopped';
+                    document.getElementById('status').innerText = data.running ? `Bot "${currentBotName}" is running` : `Bot "${currentBotName}" is stopped`;
                 })
                 .catch(error => showError('Error fetching bot status.'));
         }
 
         function fetchLogs() {
-            fetch('/logs')
+            fetch(`/logs?bot_name=${currentBotName}`)
                 .then(response => response.json())
                 .then(data => {
                     const botLogElement = document.getElementById('bot-log');
@@ -272,6 +426,92 @@
                 .catch(error => showError('Error fetching logs.'));
         }
 
+        function fetchBotInfo() {
+            fetch(`/bot_info`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        document.getElementById('next-restart').innerText = `Next Restart: ${data.error}`;
+                        document.getElementById('first-account-time').innerText = `First Account Time: ${data.error}`;
+                        document.getElementById('processed-accounts').innerText = `Processed Accounts: ${data.error}`;
+                    } else {
+                        // Update next restart time
+                        document.getElementById('next-restart').innerText = `Next Restart: ${data.next_restart_time ? data.next_restart_time : 'N/A'}`;
+                        
+                        // Update first account time
+                        document.getElementById('first-account-time').innerText = `First Account Time: ${data.first_account_time ? data.first_account_time : 'N/A'}`;
+                        
+                        // Update processed accounts
+                        document.getElementById('processed-accounts').innerText = `Processed Accounts: ${data.processed_accounts.length > 0 ? data.processed_accounts.join(', ') : 'N/A'}`;
+                    }
+                })
+                .catch(error => {
+                    document.getElementById('next-restart').innerText = 'Next Restart: Error fetching data';
+                    document.getElementById('first-account-time').innerText = 'First Account Time: Error fetching data';
+                    document.getElementById('processed-accounts').innerText = 'Processed Accounts: Error fetching data';
+                    showError('Error fetching bot info.');
+                });
+        }
+
+        function loadBotList() {
+            fetch('/bot_list')
+                .then(response => response.json())
+                .then(data => {
+                    const selectElement = document.getElementById('botSelect');
+                    const startBotButton = document.querySelector('button[onclick="startBot()"]');
+                    selectElement.innerHTML = '';
+
+                    if (data.bots.length === 0) {
+                        startBotButton.disabled = true;  // Disable the Start Bot button if no bots
+                        const option = document.createElement('option');
+                        option.value = '';
+                        option.text = 'No bots available';
+                        selectElement.add(option);
+                    } else {
+                        startBotButton.disabled = false;  // Enable Start Bot button
+                        data.bots.forEach(bot => {
+                            const option = document.createElement('option');
+                            option.value = bot;
+                            option.text = bot;
+                            selectElement.add(option);
+                        });
+                        currentBotName = selectElement.value;
+                        onBotChange();  // Refresh the UI for the selected bot
+                    }
+
+                    // Update bot count
+                    updateBotCount();
+                })
+                .catch(error => showError('Error fetching bot list.'));
+        }
+
+        function updateBotCount() {
+            console.log("Fetching bot count...");
+            fetch('/bot_count')
+                .then(response => response.json())
+                .then(data => {
+                    console.log("Bot count response:", data);  // Log respons dari API
+                    if (data && typeof data.running_bots === 'number') {
+                        const botCountElement = document.getElementById('bot-count');
+                        if (botCountElement) {
+                            botCountElement.innerText = `Number of running bots: ${data.running_bots}`;
+                        } else {
+                            console.error("Element with ID 'bot-count' not found.");
+                        }
+                    } else {
+                        console.error('Invalid response format:', data);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching bot count:', error);  // Log jika terjadi error
+                    const botCountElement = document.getElementById('bot-count');
+                    if (botCountElement) {
+                        botCountElement.innerText = 'Number of running bots: Error';
+                    }
+                });
+        }
+
+
         function fetchTotalBalance() {
             fetch('/total_balance')
                 .then(response => response.json())
@@ -281,23 +521,17 @@
                 .catch(error => showError('Error fetching total balance.'));
         }
 
-        function fetchNextRestart() {
-            fetch('/next_restart')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('next-restart').innerText = `Next Restart: ${data.next_restart_time ? data.next_restart_time : 'N/A'}`;
-                })
-                .catch(error => {
-                    document.getElementById('next-restart').innerText = 'Next Restart: Error fetching data';
-                    showError('Error fetching next restart time.');
-                });
-        }
-
-        setInterval(getStatus, 5000);
+    // Fungsi-fungsi lain dipanggil setelah halaman dimuat
+        loadBotList();
+        updateBotCount();
+        setInterval(updateBotCount, 3000);
+        setInterval(getStatus, 3000);
         setInterval(fetchLogs, 3000);
-        setInterval(fetchTotalBalance, 5000);
-        fetchNextRestart();  // Memastikan fungsi ini dipanggil saat halaman pertama kali dimuat
-        setInterval(fetchNextRestart, 5000);
+        setInterval(fetchBotIP, 3000);
+        setInterval(fetchProcessingAccount, 3000);
+        fetchBotInfo();  // Memastikan fungsi ini dipanggil saat halaman pertama kali dimuat
+        setInterval(fetchBotInfo, 3000);
+        setInterval(fetchTotalBalance, 3000);
     </script>
 </body>
 </html>
