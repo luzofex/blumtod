@@ -405,29 +405,37 @@ def total_balance():
 
     # Cek apakah file balances.json ada
     if os.path.exists(balances_file):
-        remove_empty_lines(balances_file)  # Bersihkan balances file sebelum membaca
-        with open(balances_file, 'r', encoding='utf-8') as f:
-            balances = json.load(f)
-
         try:
+            # Baca file balances.json
+            with open(balances_file, 'r', encoding='utf-8') as f:
+                balances = json.load(f)
+
             total_balance = 0.0
-            for user_id, balance in balances.items():
+
+            # Loop melalui setiap balance dan tambahkan ke total_balance
+            for user, balance in balances.items():
                 try:
+                    # Pastikan balance bisa dikonversi ke float
                     float_balance = float(balance)
                     total_balance += float_balance
-                except ValueError:
-                    logger.error(f"Invalid balance value for user {user_id}: {balance}")
-                    return jsonify({'error': f'Invalid balance value for user {user_id} in balances.json'}), 500
+                except ValueError as e:
+                    logger.error(f"Invalid balance value for user {user}: {balance}. Error: {str(e)}")
+                    return jsonify({'error': f'Invalid balance value for user {user}'}), 500
 
+            # Kembalikan total balance
             logger.info(f"Total balance calculated: {total_balance}")
             return jsonify({'total_balance': total_balance})
 
-        except ValueError as e:
-            logger.error(f"Error calculating total balance: {str(e)}")
-            return jsonify({'error': 'Invalid balance value in balances.json'}), 500
+        except json.JSONDecodeError as e:
+            logger.error(f"Error reading balances.json: {str(e)}")
+            return jsonify({'error': 'Failed to parse balances.json'}), 500
+
     else:
-        logger.warning("balances.json file not found.")
-        return jsonify({'total_balance': 0})
+        # Jika balances.json tidak ditemukan, kembalikan total balance 0
+        logger.warning(f"{balances_file} not found.")
+        return jsonify({'total_balance': 0}), 404
+
+
 
 
 @app.route('/bot_count', methods=['GET'])

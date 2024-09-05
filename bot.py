@@ -77,9 +77,15 @@ def load_file_lines(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
         return [line.strip() for line in f.readlines() if line.strip()]
 
-# Mengimpor User-Agent dari file
 def load_user_agents(file_path='user-agent.txt'):
-    return load_file_lines(file_path)
+    """Membaca file user-agent dan menghapus baris yang hanya berisi spasi atau kosong."""
+    with open(file_path, 'r', encoding='utf-8') as f:
+        # Hanya ambil baris yang tidak kosong dan tidak hanya terdiri dari spasi
+        agents = [line.strip() for line in f.readlines() if line.strip()]
+    
+    if not agents:
+        print(f"{merah}No valid user-agents found in {file_path}, check the file.")
+    return agents
 
 # Menyimpan User-Agent yang dipilih untuk setiap akun
 account_user_agents = {}
@@ -304,22 +310,43 @@ class BlumTod:
         if proxy is not None:
             self.ses.proxies.update({"http": proxy, "https": proxy})
 
-    def claim_farming(self, access_token):
+    def claim_farming(self, access_token, first_name):
         if not self.running:
             return 0
         url = "https://game-domain.blum.codes/api/v1/farming/claim"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
         res = self.http(url, headers, "")
+        
         if res is None:
             self.log(f"{merah}Failed to claim farming balance.")
             return 0
+        
+        try:
+            response_json = res.json()  # Parse JSON respons
+        except ValueError:
+            self.log(f"{merah}Failed to parse JSON response.")
+            return 0
 
-        balance = res.json().get("availableBalance", 0)
-        self.log(f"{hijau}balance after claim : {putih}{balance}")
+        # Pastikan "availableBalance" ada di dalam respons
+        if "availableBalance" not in response_json:
+            self.log(f"{merah}availableBalance tidak ditemukan di dalam respons API.")
+            return 0
+
+        balance = response_json.get("availableBalance", 0)
+        self.log(f"{hijau}Balance after claim : {putih}{balance}")
+        
+        # Periksa apakah balance valid (bukan None atau 0 yang tidak diinginkan)
+        if balance is None or balance == 0:
+            self.log(f"{kuning}Warning: Balance is None or 0 after claim.")
+
+        # Simpan balance menggunakan first_name
+        self.save_account_balance(first_name, balance)
+        
         return balance
 
-    def get_balance(self, access_token, only_show_balance=False):
+
+    def get_balance(self, access_token, first_name, only_show_balance=False):
         if not self.running:
             return 0
         url = "https://game-domain.blum.codes/api/v1/user/balance"
@@ -333,23 +360,37 @@ class BlumTod:
                 self.countdown(3)
                 continue
 
-            balance = res.json().get("availableBalance", 0)
+            try:
+                response_json = res.json()  # Parse JSON respons
+            except ValueError:
+                self.log(f"{merah}Failed to parse JSON response.")
+                continue
+
+            # Pastikan "availableBalance" ada di dalam respons
+            if "availableBalance" not in response_json:
+                self.log(f"{merah}availableBalance tidak ditemukan di dalam respons API.")
+                continue
+
+            balance = response_json.get("availableBalance", 0)
             self.log(f"{hijau}balance : {putih}{balance}")
             
+            # Simpan balance menggunakan first_name setelah balance berhasil diambil
+            self.save_account_balance(first_name, balance)
+
             if only_show_balance:
                 return balance
 
-            timestamp = res.json().get("timestamp")
+            timestamp = response_json.get("timestamp")
             if timestamp is None:
                 self.countdown(3)
                 continue
             
             timestamp = round(timestamp / 1000)
             
-            if "farming" not in res.json().keys():
+            if "farming" not in response_json.keys():
                 return False, "not_started", balance
 
-            end_farming = res.json().get("farming", {}).get("endTime")
+            end_farming = response_json.get("farming", {}).get("endTime")
             if end_farming is None:
                 self.countdown(3)
                 continue
@@ -398,37 +439,55 @@ class BlumTod:
         random_delay(1, 3)
         return round(end / 1000)
 
-    def get_friend(self, access_token):
+    def get_friend(self, access_token, first_name, current_balance):
         if not self.running:
-            return
+            return current_balance
+
         url = "https://gateway.blum.codes/v1/friends/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
+
+        # Buat request ke API
         res = self.http(url, headers)
         if res is None:
-            self.log(f"{merah}Failed to fetch friend balance.")
-            return
+            self.log(f"{merah}Failed to fetch friend balance for {first_name}.")
+            return current_balance
 
         try:
-            can_claim = res.json().get("canClaim", False)
-            limit_invite = res.json().get("limitInvitation", 0)
-            amount_claim = res.json().get("amountForClaim")
-        except ValueError:
-            self.log(f"{merah}Failed to parse JSON response for friend balance.")
-            return
+            # Parsing response dari API
+            response_json = res.json()
+            can_claim = response_json.get("canClaim", False)
+            limit_invite = float(response_json.get("limitInvitation", 0))  # Pastikan float
+            amount_claim = float(response_json.get("amountForClaim", 0))  # Pastikan float
+        except (ValueError, KeyError):
+            self.log(f"{merah}Failed to parse JSON response for friend balance of {first_name}.")
+            return current_balance
 
-        self.log(f"{putih}limit invitation : {hijau}{limit_invite}")
-        self.log(f"{hijau}referral balance : {putih}{amount_claim}")
-        self.log(f"{putih}can claim referral : {hijau}{can_claim}")
+        # Logging informasi
+        self.log(f"{putih}limit invitation for {first_name}: {hijau}{limit_invite}")
+        self.log(f"{hijau}referral balance for {first_name}: {putih}{amount_claim}")
+        self.log(f"{putih}can claim referral for {first_name}: {hijau}{can_claim}")
+
+        # Cek apakah dapat melakukan klaim referral bonus
         if can_claim:
             url_claim = "https://gateway.blum.codes/v1/friends/claim"
-            res = self.http(url_claim, headers, "")
-            if res is None or res.json().get("claimBalance") is None:
-                self.log(f"{merah}failed claim referral bonus !")
+            claim_res = self.http(url_claim, headers, "")
+            if claim_res is None:
+                self.log(f"{merah}Failed to claim referral bonus for {first_name}!")
             else:
-                self.log(f"{hijau}success claim referral bonus !")
-            random_delay(1, 3)
+                try:
+                    claim_balance = claim_res.json().get("claimBalance", None)
+                    if claim_balance is not None:
+                        self.log(f"{hijau}Successfully claimed referral bonus for {first_name}!")
+                        current_balance += float(amount_claim)  # Tambahkan klaim sebagai float
+                    else:
+                        self.log(f"{merah}No claim balance found in response for {first_name}.")
+                except ValueError:
+                    self.log(f"{merah}Failed to parse claim response JSON for {first_name}.")
+
         random_delay(1, 3)
+        return current_balance  # Kembalikan balance yang sudah diperbarui
+
 
     def checkin(self, access_token):
         if not self.running:
@@ -452,9 +511,9 @@ class BlumTod:
             self.log(f"{hijau}success check in today !")
         random_delay(1, 3)
 
-    def playgame(self, access_token):
+    def playgame(self, access_token, first_name, current_balance):
         if not self.running:
-            return
+            return current_balance  # Kembalikan balance saat ini jika bot tidak berjalan
 
         url_play = "https://game-domain.blum.codes/api/v1/game/play"
         url_claim = "https://game-domain.blum.codes/api/v1/game/claim"
@@ -464,22 +523,23 @@ class BlumTod:
         
         max_retries = 5
         retries = 0
+        total_points_earned = 0  # Variabel untuk menghitung total poin yang didapat dari bermain game
 
         while self.running:
             res = self.http(url_balance, headers)
             if res is None or res.status_code != 200:
                 self.log(f"{merah}Failed to fetch balance, skipping playgame.")
-                return
+                return current_balance  # Kembalikan balance saat ini jika gagal mengambil balance
 
             try:
                 play = res.json().get("playPasses")
             except ValueError:
                 self.log(f"{merah}Failed to parse JSON response for balance. Raw response: {res.text}")
-                return
+                return current_balance
 
             if play is None or play <= 0:
                 self.log(f"{kuning}No game tickets available.")
-                return
+                return current_balance
 
             self.log(f"{hijau}You have {putih}{play}{hijau} game ticket(s).")
 
@@ -488,7 +548,7 @@ class BlumTod:
                     break
 
                 if self.is_expired(access_token):
-                    return True
+                    return current_balance
 
                 res = self.http(url_play, headers, "")
                 if res is None or res.status_code != 200:
@@ -496,7 +556,7 @@ class BlumTod:
                     retries += 1
                     if retries >= max_retries:
                         self.log(f"{merah}Max retries reached, exiting game loop.")
-                        return
+                        return current_balance
                     random_delay(1, 3)
                     continue
 
@@ -507,7 +567,7 @@ class BlumTod:
                     retries += 1
                     if retries >= max_retries:
                         self.log(f"{merah}Max retries reached, exiting game loop.")
-                        return
+                        return current_balance
                     continue
 
                 if game_id is None:
@@ -516,7 +576,7 @@ class BlumTod:
                     retries += 1
                     if retries >= max_retries:
                         self.log(f"{merah}Max retries reached, exiting game loop.")
-                        return
+                        return current_balance
                     random_delay(1, 3)
                     continue
 
@@ -535,6 +595,7 @@ class BlumTod:
                     try:
                         if "OK" in res.text:
                             self.log(f"{hijau}Successfully earned {putih}{point}{hijau} points!")
+                            total_points_earned += point  # Tambahkan poin ke total yang didapatkan
                             break
                         else:
                             message = res.json().get("message", "")
@@ -547,6 +608,15 @@ class BlumTod:
 
                     random_delay(1, 3)
                     break
+
+            # Tambahkan poin yang diperoleh dari bermain game ke balance saat ini
+            updated_balance = float(current_balance) + float(total_points_earned)
+            self.log(f"{hijau}Total balance after playing game: {putih}{updated_balance}")
+
+            # Simpan balance yang diperbarui
+            self.save_account_balance(first_name, updated_balance)
+            
+            return updated_balance  # Kembalikan balance yang telah diperbarui
 
     def data_parsing(self, data):
         return {k: v[0] for k, v in parse_qs(data).items()}
@@ -610,46 +680,65 @@ class BlumTod:
             acc[str(userid)] = data
             open(file, "w", encoding="utf-8").write(json.dumps(acc, indent=4))
 
-    def save_account_balance(self, account_name, balance):
-        """Simpan balance ke balances.json menggunakan nama akun sebagai kunci."""
+    def save_account_balance(self, first_name, balance):
+        """Simpan balance ke balances.json menggunakan first_name sebagai kunci."""
         if not os.path.exists("balances.json"):
+            self.log(f"{merah}balances.json tidak ditemukan, membuat file baru...")
             open("balances.json", "w", encoding="utf-8").write(json.dumps({}))
-        balances = json.loads(open("balances.json", "r", encoding="utf-8").read())
-        balances[account_name] = balance or 0
+
+        self.log(f"{hijau}Saving balance for {first_name}: {balance}")
+        
+        # Baca balances.json
+        with open("balances.json", "r", encoding="utf-8") as f:
+            try:
+                balances = json.load(f)
+            except json.JSONDecodeError:
+                self.log(f"{merah}balances.json kosong atau korup, membuat ulang file.")
+                balances = {}
+
+        # Simpan atau perbarui balance berdasarkan first_name
+        balances[first_name] = balance or 0
+
+        # Tulis kembali balances.json
         with open("balances.json", "w", encoding="utf-8") as f:
             json.dump(balances, f, indent=4)
 
+        self.log(f"{hijau}Balance for {first_name} berhasil disimpan.")
+
+
     def update_balance(self, access_token, new_balance):
-        """Update balances.json with the new balance for the user."""
+        """Update balances.json with the new balance for the user using first_name."""
         try:
-            userid = self.get_user_id_from_token(access_token)
-            if userid:
-                self.save_account_balance(userid, new_balance)
+            first_name = self.get_first_name_from_token(access_token)  # Menggunakan firstname
+            if first_name:
+                self.save_account_balance(first_name, new_balance)
         except Exception as e:
             self.log(f"{merah}Failed to update balance in balances.json: {str(e)}")
 
-    def get_user_id_from_token(self, token):
-        """Extract user ID from the access token."""
+    def get_first_name_from_token(self, token):
+        """Extract first_name from the access token."""
         try:
             payload = json.loads(b64decode(token.split(".")[1] + "==").decode())
-            return str(payload.get("sub"))
+            return str(payload.get("first_name"))
         except Exception as e:
-            self.log(f"{merah}Failed to parse user ID from token: {str(e)}")
+            self.log(f"{merah}Failed to parse first name from token: {str(e)}")
             return None
 
-    def check_and_save_balance(self, access_token, account_name):
-        """Mengirim permintaan ke server untuk mengecek balance akun dan menyimpannya."""
+
+    def check_and_save_balance(self, access_token, first_name):
+        """Mengirim permintaan ke server untuk mengecek balance akun dan menyimpannya berdasarkan first_name."""
         balance = self.get_balance(access_token, only_show_balance=True)
         if balance is not None:
-            self.save_account_balance(account_name, balance)
-            self.log(f"{hijau}Balance for {account_name} saved: {putih}{balance}")
+            self.save_account_balance(first_name, balance)
+            self.log(f"{hijau}Balance for {first_name} saved: {putih}{balance}")
         else:
-            self.log(f"{merah}Failed to retrieve balance for {account_name}")
+            self.log(f"{merah}Failed to retrieve balance for {first_name}")
+
 
     def process_account(self, account, access_token, save_state_callback):
         try:
-            account_name = account['user']['first_name']
-            self.log(f"Processing account for user: {account_name}")
+            first_name = account['user']['first_name']  # Menggunakan first_name
+            self.log(f"Processing account for user: {first_name}")
 
             session_user_agent = self.get_user_agent_for_account(account['query_id'])
             if session_user_agent:
@@ -667,7 +756,7 @@ class BlumTod:
             if not access_token:
                 access_token = self.renew_access_token(account['user'])
                 if not access_token:
-                    self.save_failed_token(account_name, account)
+                    self.save_failed_token(first_name, account)
                     return {"status": "error", "message": "Failed to renew access token"}
 
                 self.save_local_token(account['user']['id'], access_token)
@@ -676,28 +765,37 @@ class BlumTod:
                 self.log(f"{merah}Access token is expired or invalid. Moving to the next account.")
                 return {"status": "error", "message": "Access token expired"}
 
+            # Check-in and tasks
             self.checkin(access_token)
-            self.get_friend(access_token)
-            if self.AUTOTASK:
-                self.solve_task(access_token)
 
-            status, res_bal, balance = self.get_balance(access_token)
+            # Ambil balance awal
+            status, res_bal, balance = self.get_balance(access_token, first_name)
             if status:
-                res_bal = self.claim_farming(access_token)
-                self.start_farming(access_token)
-            if isinstance(res_bal, str):
-                self.start_farming(access_token)
-            if self.AUTOGAME:
-                balance = self.playgame(access_token)
+                res_bal = self.claim_farming(access_token, first_name)
+                if not isinstance(res_bal, str):
+                    self.start_farming(access_token)
 
-            self.check_and_save_balance(access_token, account_name)
-            save_state_callback(account_name, {"balance": balance})
+            # Perbarui balance dengan hasil dari friend bonus
+            balance = self.get_friend(access_token, first_name, balance)
+
+            # Jika AUTOGAME aktif, tambahkan balance dari game
+            if self.AUTOGAME:
+                balance = self.playgame(access_token, first_name, balance)
+
+            # Log balance akhir
+            self.log(f"{hijau}Final balance for {first_name}: {putih}{balance}")
+
+            # Simpan balance
+            self.check_and_save_balance(access_token, first_name)
+            save_state_callback(first_name, {"balance": balance})
 
             return {"status": "success", "balance": balance}
 
         except Exception as e:
-            self.log(f"Error processing account for {account_name}: {str(e)}")
+            self.log(f"Error processing account for {first_name}: {str(e)}")
             return {"status": "error", "message": str(e)}
+
+
 
     def sum_all_balances(self):
         """Menjumlahkan semua balance yang ada di balances.json."""
@@ -952,7 +1050,8 @@ class BlumTod:
                         data_parse = self.data_parsing(data)
                         user = json.loads(data_parse["user"])
                         userid = user["id"]
-                        self.log(f"{hijau}login as : {putih}{user['first_name']}")
+                        first_name = user["first_name"]
+                        self.log(f"{hijau}login as : {putih}{first_name}")
 
                         session_user_agent = self.get_user_agent_for_account(index)
                         if session_user_agent is None:
@@ -966,6 +1065,7 @@ class BlumTod:
                             proxy = proxies[index % len(proxies)]
                         self.set_proxy(proxy if self.use_proxy else None)
                         self.ipinfo() if self.use_proxy else None
+
                         access_token = self.get_local_token(userid)
                         failed_fetch_token = False
                         while self.running:
@@ -985,20 +1085,29 @@ class BlumTod:
                             break
                         if failed_fetch_token:
                             continue
-                        self.checkin(access_token)
-                        self.get_friend(access_token)
-                        if self.AUTOTASK:
-                            self.solve_task(access_token)
-                        status, res_bal, balance = self.get_balance(access_token)
-                        if status:
-                            res_bal = self.claim_farming(access_token)
-                            self.start_farming(access_token)
-                        if isinstance(res_bal, str):
-                            self.start_farming(access_token)
-                        if self.AUTOGAME:
-                            balance = self.playgame(access_token)
 
-                        self.save_account_balance(userid, balance)
+                        # Check-in, klaim teman, dan tugas otomatis
+                        self.checkin(access_token)
+
+                        # Ambil balance awal
+                        status, res_bal, balance = self.get_balance(access_token, first_name)
+                        if status:
+                            res_bal = self.claim_farming(access_token, first_name)
+                            if not isinstance(res_bal, str):
+                                self.start_farming(access_token)
+
+                        # Perbarui balance dengan hasil dari friend bonus
+                        balance = self.get_friend(access_token, first_name, balance)
+
+                        # Jika AUTOGAME aktif, tambahkan balance dari game
+                        if self.AUTOGAME:
+                            balance = self.playgame(access_token, first_name, balance)
+
+                        # Log balance akhir
+                        self.log(f"{hijau}Final balance for {first_name}: {putih}{balance}")
+
+                        # Simpan balance
+                        self.save_account_balance(first_name, balance)
                         print(self.garis)
                         self.countdown(self.DEFAULT_INTERVAL)
 
@@ -1053,6 +1162,7 @@ class BlumTod:
                 random.shuffle(datas)
 
                 continue
+
 
 if __name__ == "__main__":
     while True:

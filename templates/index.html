@@ -84,8 +84,6 @@
         <h1 class="text-light-custom">Bot Control Interface</h1>
 
         <div id="bot-count" class="alert alert-info">Number of running bots: Loading...</div>
-
-
         <div id="total-balance" class="alert alert-secondary">Total Balance: Loading...</div>
 
         <!-- First Account Time, Processed Accounts, Next Restart -->
@@ -511,27 +509,60 @@
                 });
         }
 
-
         function fetchTotalBalance() {
+            console.log("Fetching total balance count...");
             fetch('/total_balance')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('total-balance').innerText = `Total Balance: ${data.total_balance}`;
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Failed to fetch balance');
+                    }
+                    return response.json();  // Parse the response as JSON
                 })
-                .catch(error => showError('Error fetching total balance.'));
+                .then(data => {
+                    if (data && typeof data.total_balance === 'number') {
+                        // If total_balance is available and is a number
+                        document.getElementById('total-balance').innerText = `Total Balance: ${data.total_balance.toFixed(2)}`;
+                        console.log("Total balance updated on UI:", data.total_balance);
+                    } else {
+                        console.error('Invalid response format:', data);
+                        document.getElementById('total-balance').innerText = 'Total Balance: Error';
+                    }
+                })
+                .catch(error => {
+                    console.error('Error fetching total balance:', error);
+                    document.getElementById('total-balance').innerText = 'Total Balance: Error';
+                });
         }
 
-    // Fungsi-fungsi lain dipanggil setelah halaman dimuat
-        loadBotList();
-        updateBotCount();
-        setInterval(updateBotCount, 3000);
-        setInterval(getStatus, 3000);
-        setInterval(fetchLogs, 3000);
-        setInterval(fetchBotIP, 3000);
-        setInterval(fetchProcessingAccount, 3000);
-        fetchBotInfo();  // Memastikan fungsi ini dipanggil saat halaman pertama kali dimuat
-        setInterval(fetchBotInfo, 3000);
-        setInterval(fetchTotalBalance, 3000);
+
+        document.addEventListener("DOMContentLoaded", function() {
+            loadBotList();
+            setInterval(loadBotList, 10000); 
+            
+            fetchTotalBalance();
+            setInterval(fetchTotalBalance, 1000);// Interval 10 detik untuk update bot list
+
+            updateBotCount();
+            setInterval(updateBotCount, 1000);  // Interval 5 detik untuk update bot count
+
+            getStatus();
+            setInterval(getStatus, 1000);  // Interval 5 detik untuk status
+
+            fetchLogs();
+            setInterval(fetchLogs, 1000);  // Interval 5 detik untuk logs
+
+            fetchBotIP();
+            setInterval(fetchBotIP, 10000);  // Interval 10 detik untuk IP
+
+            fetchProcessingAccount();
+            setInterval(fetchProcessingAccount, 10000);  // Interval 10 detik untuk processed accounts
+
+            fetchBotInfo();
+            setInterval(fetchBotInfo, 1000);  // Interval 10 detik untuk info bot
+
+  // Memanggil setiap 5 detik untuk balance
+        });
+
     </script>
 </body>
 </html>
