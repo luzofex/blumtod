@@ -536,8 +536,15 @@ def reset_bot():
             open(http_log_file, 'w').close()  # Mengosongkan HTTP log file
             logger.info(f"HTTP log file {http_log_file} reset.")
 
-    logger.info("All bot states and log files have been reset.")
-    return jsonify({'status': 'success', 'message': 'All bot states and log files have been reset.'})
+    # Hapus isi file tokens.json dengan menulis {}
+    tokens_file = 'tokens.json'
+    if os.path.exists(tokens_file):
+        with open(tokens_file, 'w', encoding='utf-8') as f:
+            json.dump({}, f, indent=4)  # Mengosongkan isi dengan {}
+        logger.info(f"{tokens_file} has been reset to an empty object.")
+
+    logger.info("All bot states, log files, and tokens.json have been reset.")
+    return jsonify({'status': 'success', 'message': 'All bot states, log files, and tokens.json have been reset.'})
 
 @app.route('/refresh_balance', methods=['POST'])
 def refresh_balance():

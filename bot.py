@@ -443,7 +443,7 @@ class BlumTod:
         if not self.running:
             return current_balance
 
-        url = "https://gateway.blum.codes/v1/friends/balance"
+        url = "https://user-domain.blum.codes/v1/friends/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
 
@@ -470,7 +470,7 @@ class BlumTod:
 
         # Cek apakah dapat melakukan klaim referral bonus
         if can_claim:
-            url_claim = "https://gateway.blum.codes/v1/friends/claim"
+            url_claim = "https://user-domain.blum.codes/v1/friends/claim"
             claim_res = self.http(url_claim, headers, "")
             if claim_res is None:
                 self.log(f"{merah}Failed to claim referral bonus for {first_name}!")
