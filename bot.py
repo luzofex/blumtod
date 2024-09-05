@@ -236,7 +236,7 @@ class BlumTod:
         headers = self.base_headers.copy()
         data = dp({"query": tg_data})
         headers["Content-Length"] = str(len(data))
-        url = "https://gateway.blum.codes/v1/auth/provider/PROVIDER_TELEGRAM_MINI_APP"
+        url = "https://user-domain.blum.codes/api/v1/auth/provider/PROVIDER_TELEGRAM_MINI_APP"
         res = self.http(url, headers, data)
         if res is None:
             self.log(f"{merah}Failed to fetch token from gateway.")
@@ -1071,7 +1071,7 @@ class BlumTod:
                         while self.running:
                             self.check_for_stop()
 
-                            if access_token is False:
+                            if not access_token:
                                 access_token = self.renew_access_token(data)
                                 if access_token is False:
                                     self.save_failed_token(userid, data)
