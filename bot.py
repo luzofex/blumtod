@@ -413,21 +413,9 @@ class BlumTod:
         url = "https://game-domain.blum.codes/api/v1/farming/start"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
-        
         while True:
             res = self.http(url, headers, "")
-            if res is None:
-                self.log(f"{merah}Failed to start farming, retrying...")
-                self.countdown(3)
-                continue
-
-            try:
-                end = res.json().get("endTime")
-            except ValueError:
-                self.log(f"{merah}Failed to parse JSON response for farming.")
-                self.countdown(3)
-                continue
-
+            end = res.json().get("endTime")
             if end is None:
                 self.countdown(3)
                 continue
@@ -436,14 +424,13 @@ class BlumTod:
         end_date = datetime.fromtimestamp(end / 1000)
         self.log(f"{hijau}start farming successfully !")
         self.log(f"{hijau}end farming : {putih}{end_date}")
-        random_delay(1, 3)
         return round(end / 1000)
 
     def get_friend(self, access_token, first_name, current_balance):
         if not self.running:
             return current_balance
 
-        url = "https://user-domain.blum.codes/v1/friends/balance"
+        url = "https://gateway.blum.codes/v1/friends/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
 
@@ -470,7 +457,7 @@ class BlumTod:
 
         # Cek apakah dapat melakukan klaim referral bonus
         if can_claim:
-            url_claim = "https://user-domain.blum.codes/v1/friends/claim"
+            url_claim = "https://gateway.blum.codes/v1/friends/balance"
             claim_res = self.http(url_claim, headers, "")
             if claim_res is None:
                 self.log(f"{merah}Failed to claim referral bonus for {first_name}!")
@@ -1073,7 +1060,7 @@ class BlumTod:
 
                             if not access_token:
                                 access_token = self.renew_access_token(data)
-                                if access_token is False:
+                                if not access_token:
                                     self.save_failed_token(userid, data)
                                     failed_fetch_token = True
                                     break
@@ -1090,11 +1077,16 @@ class BlumTod:
                         self.checkin(access_token)
 
                         # Ambil balance awal
-                        status, res_bal, balance = self.get_balance(access_token, first_name)
+                        status, end_farming, balance = self.get_balance(access_token, first_name)
+
+                        # Jika waktu farming sudah tiba, lakukan klaim farming
                         if status:
-                            res_bal = self.claim_farming(access_token, first_name)
-                            if not isinstance(res_bal, str):
-                                self.start_farming(access_token)
+                            balance = self.claim_farming(access_token, first_name)
+                        
+                        # Jika farming belum dimulai, otomatis mulai farming
+                        if end_farming == "not_started":
+                            self.log(f"{kuning}Farming belum dimulai, memulai farming sekarang.")
+                            end_farming = self.start_farming(access_token)
 
                         # Perbarui balance dengan hasil dari friend bonus
                         balance = self.get_friend(access_token, first_name, balance)
