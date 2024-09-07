@@ -1081,7 +1081,7 @@ class BlumTod:
 
                         # Jika waktu farming sudah tiba, lakukan klaim farming
                         if status:
-                            balance = self.claim_farming(access_token)
+                            balance = self.claim_farming(access_token, first_name)
                             end_farming = self.start_farming(access_token)
 
                         # Jika farming belum dimulai atau end_farming adalah string, otomatis mulai farming
