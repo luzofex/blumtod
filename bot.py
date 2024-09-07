@@ -1081,11 +1081,12 @@ class BlumTod:
 
                         # Jika waktu farming sudah tiba, lakukan klaim farming
                         if status:
-                            balance = self.claim_farming(access_token, first_name)
-                        
-                        # Jika farming belum dimulai, otomatis mulai farming
-                        if end_farming == "not_started":
-                            self.log(f"{kuning}Farming belum dimulai, memulai farming sekarang.")
+                            balance = self.claim_farming(access_token)
+                            end_farming = self.start_farming(access_token)
+
+                        # Jika farming belum dimulai atau end_farming adalah string, otomatis mulai farming
+                        if isinstance(end_farming, str) or end_farming == "not_started":
+                            self.log(f"{kuning}Farming belum dimulai atau farming status tidak valid, memulai farming sekarang.")
                             end_farming = self.start_farming(access_token)
 
                         # Perbarui balance dengan hasil dari friend bonus
