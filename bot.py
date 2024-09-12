@@ -751,7 +751,12 @@ class BlumTod:
                 return {"status": "error", "message": "Access token expired"}
 
             # Check-in and tasks
-            self.checkin(access_token)
+            json_status = self.checkin(access_token)
+
+            # Periksa jika terjadi error JSON
+            if json_status.get("status") == "json_error":
+                self.log(f"{merah}Switching to next account due to repeated JSON errors.")
+                return {"status": "json_error", "message": "Failed to fetch valid JSON after 3 attempts."}
 
             # Ambil balance awal
             status, res_bal, balance = self.get_balance(access_token, first_name)
@@ -849,7 +854,9 @@ class BlumTod:
         proxy_switch_count = 0
         max_retries = 5
         max_proxy_switches = 3
-        max_looping_errors = 3  # Batas looping error sebelum restart
+        max_looping_errors = 3
+        max_json_failures = 3   # Batas maksimal kegagalan parsing JSON sebelum ganti akun
+        json_failure_counter = 0  # Counter untuk kegagalan parsing JSON
 
         while self.running:
             try:
@@ -857,7 +864,7 @@ class BlumTod:
                 if not os.path.exists(logfile):
                     open(logfile, "a", encoding="utf-8").close()
                 logsize = os.path.getsize(logfile)
-                if logsize > (1024 * 2):
+                if logsize > (1024 * 2):  # Reset log jika ukurannya lebih dari 2KB
                     open(logfile, "w", encoding="utf-8").write("")
 
                 if not is_connected():  # Cek koneksi sebelum membuat request
@@ -873,13 +880,21 @@ class BlumTod:
                     res = self.ses.post(url, headers=headers, data=data, timeout=30)
 
                 open(f"http_{self.bot_name}.log", "a", encoding="utf-8").write(res.text + "\n")
+
+                # Cek jika response bukan JSON dan mengandung tag HTML
                 if "<title>" in res.text:
                     self.log(f"{merah}Failed to fetch JSON response!")
+                    json_failure_counter += 1  # Increment JSON failure counter
+
+                    if json_failure_counter >= max_json_failures:  # Ganti akun jika kegagalan mencapai batas
+                        self.log(f"{merah}Failed to fetch JSON response {max_json_failures} times. Returning to switch account.")
+                        return {"status": "json_error"}  # Kembalikan status JSON error ke process_account
+
                     time.sleep(2)
-                    continue
+                    continue  # Coba lagi
 
                 retry_counter = 0
-                return res
+                return res  # Return jika berhasil
 
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout):
                 self.log(f"{merah}Connection error/connection timeout!")
