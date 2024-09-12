@@ -430,7 +430,7 @@ class BlumTod:
         if not self.running:
             return current_balance
 
-        url = "https://gateway.blum.codes/v1/friends/balance"
+        url = "https://user-domain.blum.codes/api/v1/friends/balance"
         headers = self.base_headers.copy()
         headers["Authorization"] = f"Bearer {access_token}"
 
@@ -457,7 +457,7 @@ class BlumTod:
 
         # Cek apakah dapat melakukan klaim referral bonus
         if can_claim:
-            url_claim = "https://gateway.blum.codes/v1/friends/balance"
+            url_claim = "https://user-domain.blum.codes/api/v1/friends/balance"
             claim_res = self.http(url_claim, headers, "")
             if claim_res is None:
                 self.log(f"{merah}Failed to claim referral bonus for {first_name}!")
@@ -645,16 +645,14 @@ class BlumTod:
         open("tokens.json", "w", encoding="utf-8").write(json.dumps(tokens, indent=4))
 
     def is_expired(self, token):
-        try:
-            header, payload, sign = token.split(".")
-            payload = b64decode(payload + "==").decode()
-            jload = json.loads(payload)
-            now = round(datetime.now().timestamp()) + 300
-            exp = jload["exp"]
-            if now > exp:
-                return True
-        except Exception as e:
-            self.log(f"{merah}Invalid JWT token detected: {str(e)}")
+        if token is None or isinstance(token, bool):
+            return True
+        header, payload, sign = token.split(".")
+        payload = b64decode(payload + "==").decode()
+        jload = json.loads(payload)
+        now = round(datetime.now().timestamp()) + 300
+        exp = jload["exp"]
+        if now > exp:
             return True
         return False
 
